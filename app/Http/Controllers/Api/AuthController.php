@@ -55,7 +55,11 @@ class AuthController extends Controller
             */
             $token = method_exists($user, 'createToken') ? $user->createToken('api')->plainTextToken : null;
 
-            // Log successful login
+            /*
+            |--------------------------------------------------------------------------
+            | Log successful login
+            |--------------------------------------------------------------------------
+            */
             Log::info('User logged in successfully', [
                 'user_id' => $user->id,
                 'email' => $user->email,
@@ -69,9 +73,13 @@ class AuthController extends Controller
                     'token' => $token,
                 ],
             ]);
-
         } catch (Exception $e) {
-            // Log unexpected errors
+
+            /*
+            |--------------------------------------------------------------------------
+            | Log unexpected errors
+            |--------------------------------------------------------------------------
+            */
             Log::error('Login error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -126,7 +134,12 @@ class AuthController extends Controller
                 try {
                     $token = $user->createToken('api')->plainTextToken;
                 } catch (Exception $e) {
-                    // Log token creation error but don't fail the registration
+             
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Log token creation error but don't fail the registration
+                    |--------------------------------------------------------------------------
+                    */
                     Log::warning('Token creation failed during registration', [
                         'user_id' => $user->id,
                         'error' => $e->getMessage()
@@ -134,7 +147,11 @@ class AuthController extends Controller
                 }
             }
 
-            // Log successful registration
+            /*
+            |--------------------------------------------------------------------------
+            | Log successful registration
+            |--------------------------------------------------------------------------
+            */
             Log::info('User registered successfully', [
                 'user_id' => $user->id,
                 'email' => $user->email,
@@ -148,9 +165,13 @@ class AuthController extends Controller
                     'token' => $token,
                 ],
             ], 201);
-
         } catch (Exception $e) {
-            // Log registration error
+
+            /*
+            |--------------------------------------------------------------------------
+            | Log registration error
+            |--------------------------------------------------------------------------
+            */
             Log::error('Registration error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
