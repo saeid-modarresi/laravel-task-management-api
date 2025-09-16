@@ -10,3 +10,4 @@ use App\Http\Controllers\Api\AuthController;
 |--------------------------------------------------------------------------
 */
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');

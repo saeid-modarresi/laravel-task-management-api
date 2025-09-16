@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
@@ -35,7 +36,7 @@ class AuthController extends Controller
             ], 422);
         }
 
-         /*
+        /*
         |--------------------------------------------------------------------------
         | Check Sanctum: if installed, issue a token; otherwise just return the user
         |--------------------------------------------------------------------------
@@ -49,5 +50,45 @@ class AuthController extends Controller
                 'token' => $token,
             ],
         ]);
+    }
+
+    public function register(Request $request)
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | Validation
+        |--------------------------------------------------------------------------
+        */
+        $data = $request->validate([
+            'name'     => ['required', 'string', 'max:255'],
+            'email'    => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', Password::min(8)],
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create the user
+        |--------------------------------------------------------------------------
+        */
+        $user = User::create([
+            'name'     => $data['name'],
+            'email'    => $data['email'],
+            'password' => Hash::make($data['password']),
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Issue token if Sanctum is installed
+        |--------------------------------------------------------------------------
+        */
+        $token = method_exists($user, 'createToken') ? $user->createToken('api')->plainTextToken : null;
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user'  => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],
+                'token' => $token,
+            ],
+        ], 201);
     }
 }
