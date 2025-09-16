@@ -11,16 +11,29 @@ uses(TestCase::class, RefreshDatabase::class);
 | success: returns 201 with user (and token if Sanctum)
 |--------------------------------------------------------------------------
 */
-it('registers a user', function () {
-    $res = $this->postJson('/api/register', [
-        'name'     => 'Demo',
-        'email'    => 'demo@example.com',
+it('registers a user successfully', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => 'Demo',
+        'email' => 'demo@example.com',
         'password' => 'secret123',
     ]);
 
-    $res->assertCreated()
+    $response->assertCreated()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.user.email', 'demo@example.com');
+        ->assertJsonPath('data.user.email', 'demo@example.com')
+        ->assertJsonStructure([
+            'success',
+            'data' => [
+                'user' => ['id', 'name', 'email'],
+                'token'
+            ]
+        ]);
+
+    // Verify user was created in database
+    $this->assertDatabaseHas('users', [
+        'email' => 'demo@example.com',
+        'name' => 'Demo',
+    ]);
 });
 
 /*
@@ -58,4 +71,48 @@ it('throttles excessive register attempts', function () {
     }
 
     $response->assertStatus(429);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Validation: weak password -> 422
+|--------------------------------------------------------------------------
+*/
+it('rejects weak passwords', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => '123', // Too short
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['password']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Validation: required fields -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates required fields', function () {
+    $response = $this->postJson('/api/register', []);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['name', 'email', 'password']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Validation: invalid email format -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates email format', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => 'Test User',
+        'email' => 'invalid-email',
+        'password' => 'password123',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
 });
