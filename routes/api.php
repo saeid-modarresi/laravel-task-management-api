@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ProjectController;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,3 +21,10 @@ Route::post('/register', [AuthController::class, 'register'])->middleware('throt
 */
 Route::get('/users', [UserController::class, 'getUsers']);
 Route::delete('/users/{id}', [UserController::class, 'removeUser']);
+
+/*
+|--------------------------------------------------------------------------
+| Project Management Routes
+|--------------------------------------------------------------------------
+*/
+Route::apiResource('projects', ProjectController::class);
