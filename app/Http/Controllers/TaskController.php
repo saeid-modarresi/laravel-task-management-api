@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Task;
+use App\Events\TaskUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -235,9 +236,19 @@ class TaskController extends Controller
 
             // Update task using database transaction
             $updatedTask = DB::transaction(function () use ($task, $data) {
+                $originalData = $task->getOriginal();
+                
                 $task->update(array_filter($data, function($value) {
                     return $value !== null;
                 }));
+                
+                // Get updated fields for event
+                $updatedFields = array_keys(array_filter($data, function($value) {
+                    return $value !== null;
+                }));
+                
+                // Fire event for notifications
+                TaskUpdated::dispatch($task, $updatedFields);
                 
                 // Reload to get fresh data
                 return $task->fresh();

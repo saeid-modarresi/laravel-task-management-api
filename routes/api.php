@@ -7,6 +7,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\Api\CommentController;
+use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -45,3 +46,14 @@ Route::apiResource('tasks', TaskController::class);
 */
 Route::apiResource('tasks.comments', CommentController::class)
     ->parameters(['tasks' => 'task', 'comments' => 'comment']);
+
+/*
+|--------------------------------------------------------------------------
+| Notification Management Routes
+|--------------------------------------------------------------------------
+*/
+Route::get('/users/{userId}/notifications', [NotificationController::class, 'index']);
+Route::get('/users/{userId}/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+Route::patch('/users/{userId}/notifications/{notificationId}/read', [NotificationController::class, 'markAsRead']);
+Route::patch('/users/{userId}/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+Route::delete('/users/{userId}/notifications/{notificationId}', [NotificationController::class, 'destroy']);
