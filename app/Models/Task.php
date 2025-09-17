@@ -83,6 +83,9 @@ class Task extends Model
 
     /**
      * Scope a query to search tasks by title or description.
+     * 
+     * Note: Using LIKE for simplicity, but could be optimized with full-text indexes
+     * or Laravel Scout for better performance on large datasets
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
      * @param string $searchTerm

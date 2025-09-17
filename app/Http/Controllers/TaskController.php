@@ -32,6 +32,7 @@ class TaskController extends Controller
             $query = Task::select(['id', 'title', 'description', 'status', 'due_date', 'created_at', 'updated_at']);
 
             // Filter by status if provided
+            // Note: We need to debug this validation - initially wasn't working with enum values
             if ($status && in_array($status, array_keys(Task::getStatusOptions()))) {
                 $query->byStatus($status);
             }
@@ -45,7 +46,7 @@ class TaskController extends Controller
                 $query->dueAfter($dueAfter);
             }
 
-            // Full-text search
+            // TODO: Consider using Laravel Scout for better search performance
             if ($search) {
                 $query->search($search);
             }

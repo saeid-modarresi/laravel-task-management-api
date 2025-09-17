@@ -22,6 +22,15 @@ class SendTaskNotification implements ShouldQueue
 
     /**
      * Handle the event.
+     * 
+     * @param TaskUpdated $event
+     * @return void
+     * 
+     * TODO: In a real application, we should send notifications only to:
+     * - Users assigned to the task
+     * - Project stakeholders
+     * - Task watchers/followers
+     * For now, sending to all users for demonstration purposes
      */
     public function handle(TaskUpdated $event): void
     {

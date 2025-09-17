@@ -168,6 +168,7 @@ test('validates status values when creating task', function () {
 });
 
 test('validates date fields when creating task', function () {
+    // Test past due date - should fail validation
     $response = $this->postJson('/api/tasks', [
         'title' => 'Test Task',
         'due_date' => '2020-01-01' // Past date

@@ -14,6 +14,7 @@ class SendNotificationJob implements ShouldQueue
 {
     use Queueable, InteractsWithQueue, SerializesModels;
 
+    // Retry failed jobs 3 times with exponential backoff
     public $tries = 3;
     public $timeout = 60;
 
