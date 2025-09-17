@@ -1,0 +1,256 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  tests:
+    name: Tests (PHP ${{ matrix.php-version }})
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        php-version: [8.2, 8.3]
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, redis, mysql, pdo_mysql
+          coverage: xdebug
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ runner.os }}-${{ matrix.php-version }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-${{ matrix.php-version }}-
+            composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --optimize-autoloader
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Generate application key
+        run: php artisan key:generate
+
+      - name: Set up database
+        run: |
+          php artisan migrate --force
+          php artisan db:seed --force
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          CACHE_STORE: redis
+
+      - name: Run PHPUnit tests
+        run: php artisan test --coverage-clover=coverage.xml
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          CACHE_STORE: redis
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: composer-static-analysis-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Install PHPStan
+        run: composer require --dev phpstan/phpstan --no-interaction
+
+      - name: Create PHPStan config
+        run: |
+          cat > phpstan.neon << EOF
+          parameters:
+              paths:
+                  - app/
+                  - config/
+                  - database/
+                  - routes/
+              level: 5
+              ignoreErrors:
+                  - '#PHPDoc tag @var#'
+                  - '#Call to an undefined method#'
+              excludePaths:
+                  - */vendor/*
+                  - */node_modules/*
+          EOF
+
+      - name: Run PHPStan
+        run: ./vendor/bin/phpstan analyse --memory-limit=2G
+
+  code-style:
+    name: Code Style
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: composer-code-style-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Install PHP CS Fixer
+        run: composer require --dev friendsofphp/php-cs-fixer --no-interaction
+
+      - name: Create PHP CS Fixer config
+        run: |
+          cat > .php-cs-fixer.php << 'EOF'
+          <?php
+
+          $finder = PhpCsFixer\Finder::create()
+              ->in([
+                  __DIR__ . '/app',
+                  __DIR__ . '/config',
+                  __DIR__ . '/database',
+                  __DIR__ . '/routes',
+                  __DIR__ . '/tests',
+              ])
+              ->name('*.php')
+              ->notName('*.blade.php')
+              ->ignoreDotFiles(true)
+              ->ignoreVCS(true);
+
+          return (new PhpCsFixer\Config())
+              ->setRules([
+                  '@PSR12' => true,
+                  'array_syntax' => ['syntax' => 'short'],
+                  'ordered_imports' => ['sort_algorithm' => 'alpha'],
+                  'no_unused_imports' => true,
+                  'not_operator_with_successor_space' => true,
+                  'trailing_comma_in_multiline' => true,
+                  'phpdoc_scalar' => true,
+                  'unary_operator_spaces' => true,
+                  'binary_operator_spaces' => true,
+                  'blank_line_before_statement' => [
+                      'statements' => ['break', 'continue', 'declare', 'return', 'throw', 'try'],
+                  ],
+                  'phpdoc_single_line_var_spacing' => true,
+                  'phpdoc_var_without_name' => true,
+                  'method_argument_space' => [
+                      'on_multiline' => 'ensure_fully_multiline',
+                      'keep_multiple_spaces_after_comma' => true,
+                  ]
+              ])
+              ->setFinder($finder);
+          EOF
+
+      - name: Run PHP CS Fixer (dry-run)
+        run: ./vendor/bin/php-cs-fixer fix --dry-run --diff --verbose
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: composer-security-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Check for security vulnerabilities
+        run: composer audit
+
+      - name: Run Enlightn Security Checker
+        run: |
+          composer require --dev enlightn/security-checker --no-interaction
+          ./vendor/bin/security-checker security:check composer.lock
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: php
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2

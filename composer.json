@@ -11,11 +11,12 @@
     "require": {
         "php": "^8.2",
         "laravel/framework": "^12.0",
-        "laravel/sanctum": "^4.0",
+        "laravel/sanctum": "^4",
         "laravel/tinker": "^2.10.1"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
+        "friendsofphp/php-cs-fixer": "^3.64",
         "laravel/pail": "^1.2.2",
         "laravel/pint": "^1.13",
         "laravel/sail": "^1.41",
@@ -23,6 +24,7 @@
         "nunomaduro/collision": "^8.6",
         "pestphp/pest": "^3.8",
         "phpmd/phpmd": "^2.15",
+        "phpstan/phpstan": "^2.0",
         "phpunit/phpunit": "^11.5.3",
         "squizlabs/php_codesniffer": "*"
     },
@@ -63,9 +65,14 @@
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],
+        "test:coverage": [
+            "@php artisan config:clear --ansi",
+            "@php artisan test --coverage"
+        ],
         "analyse": "@php vendor/bin/phpstan analyse",
-        "lint": "@php vendor/bin/phpcs --standard=PSR12 app",
-        "lint-fix": "@php vendor/bin/phpcbf --standard=PSR12 app"
+        "lint": "@php vendor/bin/php-cs-fixer fix --dry-run --diff",
+        "lint:fix": "@php vendor/bin/php-cs-fixer fix",
+        "security": "composer audit"
     },
     "extra": {
         "laravel": {

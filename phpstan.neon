@@ -1,0 +1,18 @@
+parameters:
+    paths:
+        - app/
+        - config/
+        - database/
+        - routes/
+    level: 3
+    ignoreErrors:
+        - '#Call to an undefined static method App\\Models\\.*::#'
+        - '#Access to an undefined property App\\Models\\.*::#'
+        - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
+        - '#Parameter .* expects int, string given#'
+        - '#Undefined variable: \$this#'
+    excludePaths:
+        - */vendor/*
+        - */node_modules/*
+        - */storage/*
+        - bootstrap/cache/*
