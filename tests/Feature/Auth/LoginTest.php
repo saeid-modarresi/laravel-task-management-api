@@ -19,12 +19,12 @@ it('logs in with valid credentials', function () {
         'password' => Hash::make('secret'),
     ]);
 
-    $res = $this->postJson('/api/login', [
+    $response = $this->postJson('/api/login', [
         'email'    => 'example@test.com',
         'password' => 'secret',
     ]);
 
-    $res->assertOk()
+    $response->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.user.email', 'example@test.com');
 });
@@ -35,12 +35,12 @@ it('logs in with valid credentials', function () {
 |--------------------------------------------------------------------------
 */
 it('rejects invalid credentials with 422', function () {
-    $res = $this->postJson('/api/login', [
+    $response = $this->postJson('/api/login', [
         'email'    => 'nope@test.com',
         'password' => 'wrong',
     ]);
 
-    $res->assertStatus(422)
+    $response->assertStatus(422)
         ->assertJsonPath('success', false);
 });
 
@@ -64,4 +64,47 @@ it('throttles excessive login attempts with 429', function () {
 
     // the last attempt should be throttled
     $response->assertStatus(429);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: missing email field -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates required email field', function () {
+    $response = $this->postJson('/api/login', [
+        'password' => 'password123',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: missing password field -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates required password field', function () {
+    $response = $this->postJson('/api/login', [
+        'email' => 'test@example.com',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['password']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: invalid email format -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates email format in login', function () {
+    $response = $this->postJson('/api/login', [
+        'email' => 'invalid-email-format',
+        'password' => 'password123',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
 });

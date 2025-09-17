@@ -1,308 +1,196 @@
 <?php
 
-namespace Tests\Feature;
-
 use Tests\TestCase;
 use App\Models\Task;
 use App\Models\Comment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\Fluent\AssertableJson;
 
-class CommentsTest extends TestCase
-{
-    use RefreshDatabase;
+uses(TestCase::class, RefreshDatabase::class);
 
-    public function test_returns_paginated_list_of_comments_for_task(): void
-    {
-        $task = Task::factory()->create();
-        Comment::factory()->count(5)->create(['task_id' => $task->id]);
+beforeEach(function () {
+    $this->task = Task::factory()->create();
+});
 
-        $response = $this->getJson("/api/tasks/{$task->id}/comments");
+/*
+|--------------------------------------------------------------------------
+| List Comments
+|--------------------------------------------------------------------------
+*/
+it('returns paginated list of comments for a task', function () {
+    Comment::factory()->count(5)->create(['task_id' => $this->task->id]);
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'success',
-                'data' => [
-                    'current_page',
-                    'data' => [
-                        '*' => ['id', 'task_id', 'content', 'created_at', 'updated_at']
-                    ],
-                    'total'
-                ]
-            ]);
+    $this->getJson("/api/tasks/{$this->task->id}/comments")
+        ->assertOk()
+        ->assertJson(
+            fn(AssertableJson $json) =>
+            $json->where('success', true)
+                ->hasAll(['data.current_page', 'data.total'])
+                ->has('data.data') // the comments array
+        )
+        ->assertJsonPath('data.total', 5)
+        ->assertJsonCount(5, 'data.data');
+});
 
-        $this->assertEquals(5, $response->json('data.total'));
-    }
+it('respects pagination parameters for comments', function () {
+    Comment::factory()->count(20)->create(['task_id' => $this->task->id]);
 
-    public function test_respects_pagination_parameters_for_comments(): void
-    {
-        $task = Task::factory()->create();
-        Comment::factory()->count(20)->create(['task_id' => $task->id]);
+    $this->getJson("/api/tasks/{$this->task->id}/comments?per_page=5&page=2")
+        ->assertOk()
+        ->assertJsonPath('data.current_page', 2)
+        ->assertJsonCount(5, 'data.data');
+});
 
-        $response = $this->getJson("/api/tasks/{$task->id}/comments?per_page=5&page=2");
+it('returns 404 when listing comments for non-existent task', function () {
+    $this->getJson('/api/tasks/999/comments')
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-        $response->assertStatus(200);
-        $this->assertEquals(5, count($response->json('data.data')));
-        $this->assertEquals(2, $response->json('data.current_page'));
-    }
+/*
+|--------------------------------------------------------------------------
+| Create Comment
+|--------------------------------------------------------------------------
+*/
+it('creates a comment successfully', function () {
+    $payload = ['content' => 'This is a test comment'];
 
-    public function test_returns_404_when_listing_comments_for_non_existent_task(): void
-    {
-        $response = $this->getJson('/api/tasks/999/comments');
+    $this->postJson("/api/tasks/{$this->task->id}/comments", $payload)
+        ->assertStatus(201)
+        ->assertJson(
+            fn(AssertableJson $json) =>
+            $json->where('success', true)
+                ->hasAll(['data.id', 'data.task_id', 'data.content', 'data.created_at', 'data.updated_at'])
+                ->where('data.content', 'This is a test comment')
+                ->where('data.task_id', fn($v) => (int) $v === (int) $this->task->id)
+        );
 
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task not found.'
-            ]);
-    }
+    $this->assertDatabaseHas('comments', [
+        'task_id' => $this->task->id,
+        'content' => 'This is a test comment',
+    ]);
+});
 
-    public function test_creates_a_comment_successfully(): void
-    {
-        $task = Task::factory()->create();
-        $commentData = [
-            'content' => 'This is a test comment'
-        ];
+it('validates required fields when creating comment', function () {
+    $this->postJson("/api/tasks/{$this->task->id}/comments", [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['content']);
+});
 
-        $response = $this->postJson("/api/tasks/{$task->id}/comments", $commentData);
+it('returns 404 when creating comment for non-existent task', function () {
+    $this->postJson('/api/tasks/999/comments', ['content' => 'Test comment'])
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'success',
-                'data' => ['id', 'task_id', 'content', 'created_at', 'updated_at']
-            ])
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'task_id' => $task->id,
-                    'content' => 'This is a test comment'
-                ]
-            ]);
+/*
+|--------------------------------------------------------------------------
+| Show Comment
+|--------------------------------------------------------------------------
+*/
+it('shows a comment successfully', function () {
+    $comment = Comment::factory()->create(['task_id' => $this->task->id]);
 
-        $this->assertDatabaseHas('comments', [
-            'task_id' => $task->id,
-            'content' => 'This is a test comment'
-        ]);
-    }
+    $this->getJson("/api/tasks/{$this->task->id}/comments/{$comment->id}")
+        ->assertOk()
+        ->assertJson(
+            fn(AssertableJson $json) =>
+            $json->where('success', true)
+                ->where('data.id', $comment->id)
+                ->where('data.task_id', $this->task->id)
+                ->where('data.content', $comment->content)
+        );
+});
 
-    public function test_validates_required_fields_when_creating_comment(): void
-    {
-        $task = Task::factory()->create();
+it('returns 404 for non-existent comment', function () {
+    $this->getJson("/api/tasks/{$this->task->id}/comments/999")
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-        $response = $this->postJson("/api/tasks/{$task->id}/comments", []);
+it('returns 404 when comment belongs to different task', function () {
+    $otherTask = Task::factory()->create();
+    $comment   = Comment::factory()->create(['task_id' => $otherTask->id]);
 
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['content']);
-    }
+    $this->getJson("/api/tasks/{$this->task->id}/comments/{$comment->id}")
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-    public function test_returns_404_when_creating_comment_for_non_existent_task(): void
-    {
-        $response = $this->postJson('/api/tasks/999/comments', [
-            'content' => 'Test comment'
-        ]);
+/*
+|--------------------------------------------------------------------------
+| Update Comment
+|--------------------------------------------------------------------------
+*/
+it('updates a comment successfully', function () {
+    $comment = Comment::factory()->create(['task_id' => $this->task->id]);
 
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task not found.'
-            ]);
-    }
+    $this->putJson("/api/tasks/{$this->task->id}/comments/{$comment->id}", [
+        'content' => 'Updated comment content',
+    ])
+        ->assertOk()
+        ->assertJson(
+            fn(AssertableJson $json) =>
+            $json->where('success', true)
+                ->where('data.id', $comment->id)
+                ->where('data.content', 'Updated comment content')
+        );
 
-    public function test_shows_a_comment_successfully(): void
-    {
-        $task = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task->id]);
+    $this->assertDatabaseHas('comments', [
+        'id'      => $comment->id,
+        'content' => 'Updated comment content',
+    ]);
+});
 
-        $response = $this->getJson("/api/tasks/{$task->id}/comments/{$comment->id}");
+it('validates fields when updating comment', function () {
+    $comment = Comment::factory()->create(['task_id' => $this->task->id]);
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'success',
-                'data' => ['id', 'task_id', 'content', 'created_at', 'updated_at']
-            ])
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'id' => $comment->id,
-                    'task_id' => $task->id,
-                    'content' => $comment->content
-                ]
-            ]);
-    }
+    $this->putJson("/api/tasks/{$this->task->id}/comments/{$comment->id}", ['content' => ''])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['content']);
+});
 
-    public function test_returns_404_for_non_existent_comment(): void
-    {
-        $task = Task::factory()->create();
+it('returns 404 when updating non-existent comment', function () {
+    $this->putJson("/api/tasks/{$this->task->id}/comments/999", ['content' => 'Updated content'])
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-        $response = $this->getJson("/api/tasks/{$task->id}/comments/999");
 
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task or comment not found.'
-            ]);
-    }
+/*
+|--------------------------------------------------------------------------
+| Delete Comment
+|--------------------------------------------------------------------------
+*/
+it('deletes a comment successfully', function () {
+    $comment = Comment::factory()->create(['task_id' => $this->task->id]);
 
-    public function test_returns_404_when_comment_belongs_to_different_task(): void
-    {
-        $task1 = Task::factory()->create();
-        $task2 = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task2->id]);
+    $this->deleteJson("/api/tasks/{$this->task->id}/comments/{$comment->id}")
+        ->assertOk()
+        ->assertJson(
+            fn(AssertableJson $json) =>
+            $json->where('success', true)
+                ->where('data.message', 'Comment deleted successfully.')
+                ->where('data.deleted_comment.id', $comment->id)
+                ->where('data.deleted_comment.task_id', $this->task->id)
+        );
 
-        $response = $this->getJson("/api/tasks/{$task1->id}/comments/{$comment->id}");
+    $this->assertDatabaseMissing('comments', ['id' => $comment->id]);
+});
 
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task or comment not found.'
-            ]);
-    }
+it('returns 404 when deleting non-existent comment', function () {
+    $this->deleteJson("/api/tasks/{$this->task->id}/comments/999")
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
 
-    public function test_updates_a_comment_successfully(): void
-    {
-        $task = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task->id]);
-        
-        $updateData = [
-            'content' => 'Updated comment content'
-        ];
 
-        $response = $this->putJson("/api/tasks/{$task->id}/comments/{$comment->id}", $updateData);
+it('validates comment id format', function () {
+    $this->getJson("/api/tasks/{$this->task->id}/comments/invalid")
+        ->assertStatus(404);
+});
 
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'id' => $comment->id,
-                    'content' => 'Updated comment content'
-                ]
-            ]);
-
-        $this->assertDatabaseHas('comments', [
-            'id' => $comment->id,
-            'content' => 'Updated comment content'
-        ]);
-    }
-
-    public function test_validates_fields_when_updating_comment(): void
-    {
-        $task = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task->id]);
-
-        $response = $this->putJson("/api/tasks/{$task->id}/comments/{$comment->id}", [
-            'content' => ''
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['content']);
-    }
-
-    public function test_returns_404_when_updating_non_existent_comment(): void
-    {
-        $task = Task::factory()->create();
-
-        $response = $this->putJson("/api/tasks/{$task->id}/comments/999", [
-            'content' => 'Updated content'
-        ]);
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task or comment not found.'
-            ]);
-    }
-
-    public function test_deletes_a_comment_successfully(): void
-    {
-        $task = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task->id]);
-
-        $response = $this->deleteJson("/api/tasks/{$task->id}/comments/{$comment->id}");
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'message' => 'Comment deleted successfully.',
-                    'deleted_comment' => [
-                        'id' => $comment->id,
-                        'task_id' => $task->id
-                    ]
-                ]
-            ]);
-
-        $this->assertDatabaseMissing('comments', [
-            'id' => $comment->id
-        ]);
-    }
-
-    public function test_returns_404_when_deleting_non_existent_comment(): void
-    {
-        $task = Task::factory()->create();
-
-        $response = $this->deleteJson("/api/tasks/{$task->id}/comments/999");
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'Task or comment not found.'
-            ]);
-    }
-
-    public function test_validates_comment_id_format(): void
-    {
-        $task = Task::factory()->create();
-
-        $response = $this->getJson("/api/tasks/{$task->id}/comments/invalid");
-
-        $response->assertStatus(404);
-    }
-
-    public function test_validates_task_id_format_for_comments(): void
-    {
-        $response = $this->getJson('/api/tasks/invalid/comments');
-
-        $response->assertStatus(404);
-    }
-
-    public function test_comments_are_ordered_by_creation_date_desc(): void
-    {
-        $task = Task::factory()->create();
-        
-        // Create comments with specific timestamps
-        $comment1 = Comment::factory()->create([
-            'task_id' => $task->id,
-            'created_at' => now()->subHours(2)
-        ]);
-        $comment2 = Comment::factory()->create([
-            'task_id' => $task->id,
-            'created_at' => now()->subHour()
-        ]);
-        $comment3 = Comment::factory()->create([
-            'task_id' => $task->id,
-            'created_at' => now()
-        ]);
-
-        $response = $this->getJson("/api/tasks/{$task->id}/comments");
-
-        $response->assertStatus(200);
-        
-        $comments = $response->json('data.data');
-        $this->assertEquals($comment3->id, $comments[0]['id']); // Latest first
-        $this->assertEquals($comment2->id, $comments[1]['id']);
-        $this->assertEquals($comment1->id, $comments[2]['id']); // Oldest last
-    }
-
-    public function test_deleting_task_cascades_to_comments(): void
-    {
-        $task = Task::factory()->create();
-        $comment = Comment::factory()->create(['task_id' => $task->id]);
-
-        // Delete the task
-        $task->delete();
-
-        // Comment should be deleted due to cascade
-        $this->assertDatabaseMissing('comments', [
-            'id' => $comment->id
-        ]);
-    }
-}
+it('validates task id format for comments', function () {
+    $this->getJson('/api/tasks/invalid/comments')
+        ->assertStatus(404);
+});

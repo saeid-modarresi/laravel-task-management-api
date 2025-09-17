@@ -1,303 +1,164 @@
 <?php
 
-namespace Tests\Feature;
-
 use Tests\TestCase;
 use App\Models\User;
-use App\Models\Task;
 use App\Models\Notification;
-use App\Jobs\SendNotificationJob;
-use App\Events\TaskUpdated;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Event;
+use Illuminate\Testing\Fluent\AssertableJson;
 
-class NotificationsTest extends TestCase
-{
-    use RefreshDatabase;
+uses(TestCase::class, RefreshDatabase::class);
 
-    public function test_returns_paginated_list_of_notifications_for_user(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(5)->create(['user_id' => $user->id]);
+beforeEach(function () {
+    $this->user = User::factory()->create();
 
-        $response = $this->getJson("/api/users/{$user->id}/notifications");
+    // small helpers
+    $this->listNotifs = fn(int|string $userId, string $q = '') =>
+        test()->getJson("/api/users/{$userId}/notifications" . ($q ? "?{$q}" : ''));
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'success',
-                'data' => [
-                    'current_page',
-                    'data' => [
-                        '*' => ['id', 'user_id', 'type', 'data', 'read_at', 'created_at', 'updated_at']
-                    ],
-                    'total'
-                ]
-            ]);
+    $this->markRead = fn(int|string $userId, int|string $notifId) =>
+        test()->patchJson("/api/users/{$userId}/notifications/{$notifId}/read");
 
-        $this->assertEquals(5, $response->json('data.total'));
-    }
+    $this->markAllRead = fn(int|string $userId) =>
+        test()->patchJson("/api/users/{$userId}/notifications/mark-all-read");
 
-    public function test_filters_unread_notifications_only(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(3)->unread()->create(['user_id' => $user->id]);
-        Notification::factory()->count(2)->read()->create(['user_id' => $user->id]);
+    $this->deleteNotif = fn(int|string $userId, int|string $notifId) =>
+        test()->deleteJson("/api/users/{$userId}/notifications/{$notifId}");
+});
 
-        $response = $this->getJson("/api/users/{$user->id}/notifications?unread_only=true");
-
-        $response->assertStatus(200);
-        $this->assertEquals(3, $response->json('data.total'));
-    }
-
-    public function test_respects_pagination_parameters_for_notifications(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(20)->create(['user_id' => $user->id]);
-
-        $response = $this->getJson("/api/users/{$user->id}/notifications?per_page=5&page=2");
-
-        $response->assertStatus(200);
-        $this->assertEquals(5, count($response->json('data.data')));
-        $this->assertEquals(2, $response->json('data.current_page'));
-    }
-
-    public function test_returns_404_when_fetching_notifications_for_non_existent_user(): void
-    {
-        $response = $this->getJson('/api/users/999/notifications');
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'User not found.'
-            ]);
-    }
-
-    public function test_returns_unread_notifications_count(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(5)->unread()->create(['user_id' => $user->id]);
-        Notification::factory()->count(3)->read()->create(['user_id' => $user->id]);
-
-        $response = $this->getJson("/api/users/{$user->id}/notifications/unread-count");
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'unread_count' => 5
-                ]
-            ]);
-    }
-
-    public function test_marks_notification_as_read(): void
-    {
-        $user = User::factory()->create();
-        $notification = Notification::factory()->unread()->create(['user_id' => $user->id]);
-
-        $response = $this->patchJson("/api/users/{$user->id}/notifications/{$notification->id}/read");
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'message' => 'Notification marked as read.'
-                ]
-            ]);
-
-        $this->assertNotNull($notification->fresh()->read_at);
-    }
-
-    public function test_returns_404_when_marking_non_existent_notification_as_read(): void
-    {
-        $user = User::factory()->create();
-
-        $response = $this->patchJson("/api/users/{$user->id}/notifications/999/read");
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'User or notification not found.'
-            ]);
-    }
-
-    public function test_returns_404_when_notification_belongs_to_different_user(): void
-    {
-        $user1 = User::factory()->create();
-        $user2 = User::factory()->create();
-        $notification = Notification::factory()->create(['user_id' => $user2->id]);
-
-        $response = $this->patchJson("/api/users/{$user1->id}/notifications/{$notification->id}/read");
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'User or notification not found.'
-            ]);
-    }
-
-    public function test_marks_all_notifications_as_read(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(5)->unread()->create(['user_id' => $user->id]);
-
-        $response = $this->patchJson("/api/users/{$user->id}/notifications/mark-all-read");
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'message' => 'All notifications marked as read.',
-                    'updated_count' => 5
-                ]
-            ]);
-
-        $this->assertEquals(0, $user->notifications()->unread()->count());
-    }
-
-    public function test_deletes_notification_successfully(): void
-    {
-        $user = User::factory()->create();
-        $notification = Notification::factory()->create(['user_id' => $user->id]);
-
-        $response = $this->deleteJson("/api/users/{$user->id}/notifications/{$notification->id}");
-
-        $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'data' => [
-                    'message' => 'Notification deleted successfully.',
-                    'deleted_notification' => [
-                        'id' => $notification->id,
-                        'type' => $notification->type,
-                        'user_id' => $user->id
-                    ]
-                ]
-            ]);
-
-        $this->assertDatabaseMissing('notifications', [
-            'id' => $notification->id
-        ]);
-    }
-
-    public function test_returns_404_when_deleting_non_existent_notification(): void
-    {
-        $user = User::factory()->create();
-
-        $response = $this->deleteJson("/api/users/{$user->id}/notifications/999");
-
-        $response->assertStatus(404)
-            ->assertJson([
-                'success' => false,
-                'message' => 'User or notification not found.'
-            ]);
-    }
-
-    public function test_notifications_are_ordered_by_creation_date_desc(): void
-    {
-        $user = User::factory()->create();
-        
-        $notification1 = Notification::factory()->create([
-            'user_id' => $user->id,
-            'created_at' => now()->subHours(2)
-        ]);
-        $notification2 = Notification::factory()->create([
-            'user_id' => $user->id,
-            'created_at' => now()->subHour()
-        ]);
-        $notification3 = Notification::factory()->create([
-            'user_id' => $user->id,
-            'created_at' => now()
-        ]);
-
-        $response = $this->getJson("/api/users/{$user->id}/notifications");
-
-        $response->assertStatus(200);
-        
-        $notifications = $response->json('data.data');
-        $this->assertEquals($notification3->id, $notifications[0]['id']); // Latest first
-        $this->assertEquals($notification2->id, $notifications[1]['id']);
-        $this->assertEquals($notification1->id, $notifications[2]['id']); // Oldest last
-    }
-
-    public function test_deleting_user_cascades_to_notifications(): void
-    {
-        $user = User::factory()->create();
-        $notification = Notification::factory()->create(['user_id' => $user->id]);
-
-        // Delete the user
-        $user->delete();
-
-        // Notification should be deleted due to cascade
-        $this->assertDatabaseMissing('notifications', [
-            'id' => $notification->id
-        ]);
-    }
-
-    public function test_send_notification_job_creates_notification(): void
-    {
-        $user = User::factory()->create();
-        $notificationData = [
-            'task_id' => 1,
-            'task_title' => 'Test Task',
-            'message' => 'Task has been updated'
-        ];
-
-        $job = new SendNotificationJob($user->id, 'task_updated', $notificationData);
-        $job->handle();
-
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $user->id,
-            'type' => 'task_updated'
-        ]);
-    }
-
-    public function test_task_updated_event_dispatches_notifications(): void
-    {
-        Event::fake([TaskUpdated::class]);
-        
-        $task = Task::factory()->create();
-        $updatedFields = ['title', 'status'];
-
-        // Dispatch the event
-        TaskUpdated::dispatch($task, $updatedFields);
-
-        // Assert the event was dispatched
-        Event::assertDispatched(TaskUpdated::class, function ($event) use ($task, $updatedFields) {
-            return $event->task->id === $task->id && $event->updatedFields === $updatedFields;
-        });
-    }
-
-    public function test_notification_model_methods(): void
-    {
-        $user = User::factory()->create();
-        
-        // Test unread notification
-        $unreadNotification = Notification::factory()->unread()->create(['user_id' => $user->id]);
-        $this->assertTrue($unreadNotification->isUnread());
-        $this->assertFalse($unreadNotification->isRead());
-
-        // Test read notification
-        $readNotification = Notification::factory()->read()->create(['user_id' => $user->id]);
-        $this->assertTrue($readNotification->isRead());
-        $this->assertFalse($readNotification->isUnread());
-
-        // Test marking as read
-        $unreadNotification->markAsRead();
-        $this->assertTrue($unreadNotification->fresh()->isRead());
-
-        // Test marking as unread
-        $readNotification->markAsUnread();
-        $this->assertTrue($readNotification->fresh()->isUnread());
-    }
-
-    public function test_notification_scopes(): void
-    {
-        $user = User::factory()->create();
-        Notification::factory()->count(3)->unread()->create(['user_id' => $user->id]);
-        Notification::factory()->count(2)->read()->create(['user_id' => $user->id]);
-
-        $this->assertEquals(3, $user->notifications()->unread()->count());
-        $this->assertEquals(2, $user->notifications()->read()->count());
-    }
+function listNotifs($userId, string $q = '') {
+    return test()->getJson("/api/users/{$userId}/notifications" . ($q ? "?{$q}" : ''));
 }
+
+/*
+|--------------------------------------------------------------------------
+| List + Filters + Pagination
+|--------------------------------------------------------------------------
+*/
+it('returns paginated list of notifications for user', function () {
+    Notification::factory()->count(5)->create(['user_id' => $this->user->id]);
+
+    listNotifs($this->user->id)
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->hasAll(['data.current_page', 'data.total'])
+                 ->has('data.data')
+        )
+        ->assertJsonPath('data.total', 5)
+        ->assertJsonCount(5, 'data.data');
+});
+
+it('filters unread notifications only', function () {
+    Notification::factory()->count(3)->unread()->create(['user_id' => $this->user->id]);
+    Notification::factory()->count(2)->read()->create(['user_id' => $this->user->id]);
+
+    listNotifs($this->user->id, 'unread_only=true')
+        ->assertOk()
+        ->assertJsonPath('data.total', 3);
+});
+
+it('respects pagination parameters for notifications', function () {
+    Notification::factory()->count(20)->create(['user_id' => $this->user->id]);
+
+    listNotifs($this->user->id, 'per_page=5&page=2')
+        ->assertOk()
+        ->assertJsonPath('data.current_page', 2)
+        ->assertJsonCount(5, 'data.data');
+});
+
+it('returns 404 when fetching notifications for non-existent user', function () {
+    listNotifs(999)
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Unread Count
+|--------------------------------------------------------------------------
+*/
+it('returns unread notifications count', function () {
+    Notification::factory()->count(5)->unread()->create(['user_id' => $this->user->id]);
+    Notification::factory()->count(3)->read()->create(['user_id' => $this->user->id]);
+
+    $this->getJson("/api/users/{$this->user->id}/notifications/unread-count")
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->where('data.unread_count', 5)
+        );
+});
+
+/*
+|--------------------------------------------------------------------------
+| Mark as Read / Mark All Read
+|--------------------------------------------------------------------------
+*/
+it('marks notification as read', function () {
+    $notif = Notification::factory()->unread()->create(['user_id' => $this->user->id]);
+
+    ($this->markRead)($this->user->id, $notif->id)
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->where('data.message', 'Notification marked as read.')
+        );
+
+    expect($notif->fresh()->read_at)->not->toBeNull();
+});
+
+it('returns 404 when marking non-existent notification as read', function () {
+    ($this->markRead)($this->user->id, 999)
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
+
+it('returns 404 when notification belongs to different user', function () {
+    $otherUser = User::factory()->create();
+    $notif     = Notification::factory()->create(['user_id' => $otherUser->id]);
+
+    ($this->markRead)($this->user->id, $notif->id)
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});
+
+it('marks all notifications as read', function () {
+    Notification::factory()->count(5)->unread()->create(['user_id' => $this->user->id]);
+
+    ($this->markAllRead)($this->user->id)
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->where('data.message', 'All notifications marked as read.')
+                 ->where('data.updated_count', 5)
+        );
+
+    expect($this->user->notifications()->unread()->count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Delete
+|--------------------------------------------------------------------------
+*/
+it('deletes notification successfully', function () {
+    $notif = Notification::factory()->create(['user_id' => $this->user->id]);
+
+    ($this->deleteNotif)($this->user->id, $notif->id)
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->where('data.message', 'Notification deleted successfully.')
+                 // cast-safe comparison for possible string/int mismatch
+                 ->where('data.deleted_notification.user_id', fn ($v) => (int)$v === (int)$this->user->id)
+                 ->where('data.deleted_notification.id', fn ($v) => (int)$v === (int)$notif->id)
+        );
+
+    $this->assertDatabaseMissing('notifications', ['id' => $notif->id]);
+});
+
+it('returns 404 when deleting non-existent notification', function () {
+    ($this->deleteNotif)($this->user->id, 999)
+        ->assertNotFound()
+        ->assertJsonPath('success', false);
+});

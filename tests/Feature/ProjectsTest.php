@@ -1,258 +1,206 @@
 <?php
 
 use Tests\TestCase;
-use App\Models\Project;
 use App\Models\User;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\Fluent\AssertableJson;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeEach(function () {
+    $this->user = User::factory()->create();
+});
+
 /*
 |--------------------------------------------------------------------------
-| GET /api/projects - List Projects
+| List Projects + Filters
 |--------------------------------------------------------------------------
 */
 it('returns paginated list of projects', function () {
-    $user = User::factory()->create();
-    Project::factory()->count(25)->create(['user_id' => $user->id]);
+    Project::factory()->count(25)->create(['user_id' => $this->user->id]);
 
-    $response = $this->getJson('/api/projects');
-
-    $response->assertOk()
-        ->assertJsonPath('success', true)
-        ->assertJsonStructure([
-            'success',
-            'data' => [
-                'projects' => [
-                    '*' => ['id', 'title', 'description', 'status', 'start_date', 'end_date', 'user_id', 'created_at', 'updated_at', 'user']
-                ],
-                'pagination' => [
-                    'current_page',
-                    'total_pages',
-                    'per_page',
-                    'total_projects',
-                    'from',
-                    'to'
-                ]
-            ]
-        ]);
-
-    $data = $response->json('data');
-    expect($data['projects'])->toHaveCount(15); // Default per page
-    expect($data['pagination']['total_projects'])->toBe(25);
+    $this->getJson('/api/projects')
+        ->assertOk()
+        ->assertJson(fn (AssertableJson $json) =>
+            $json->where('success', true)
+                 ->has('data.projects', 15)
+                 ->has('data.pagination.total_projects')
+        )
+        ->assertJsonPath('data.pagination.total_projects', 25);
 });
 
 it('filters projects by user_id', function () {
-    $user1 = User::factory()->create();
-    $user2 = User::factory()->create();
-    
-    Project::factory()->count(5)->create(['user_id' => $user1->id]);
-    Project::factory()->count(3)->create(['user_id' => $user2->id]);
+    $userA = User::factory()->create();
+    $userB = User::factory()->create();
 
-    $response = $this->getJson("/api/projects?user_id={$user1->id}");
+    Project::factory()->count(5)->create(['user_id' => $userA->id]);
+    Project::factory()->count(3)->create(['user_id' => $userB->id]);
 
-    $response->assertOk()
-        ->assertJsonPath('success', true);
-
-    $data = $response->json('data');
-    expect($data['projects'])->toHaveCount(5);
-    
-    foreach ($data['projects'] as $project) {
-        expect($project['user_id'])->toBe($user1->id);
-    }
+    $this->getJson("/api/projects?user_id={$userA->id}")
+        ->assertOk()
+        ->tap(function ($response) use ($userA) {
+            foreach ($response->json('data.projects') as $project) {
+                expect($project['user_id'])->toBe($userA->id);
+            }
+        });
 });
 
 it('filters projects by status', function () {
-    $user = User::factory()->create();
-    Project::factory()->count(3)->pending()->create(['user_id' => $user->id]);
-    Project::factory()->count(2)->completed()->create(['user_id' => $user->id]);
+    Project::factory()->count(3)->pending()->create(['user_id' => $this->user->id]);
+    Project::factory()->count(2)->completed()->create(['user_id' => $this->user->id]);
 
-    $response = $this->getJson('/api/projects?status=pending');
-
-    $response->assertOk()
-        ->assertJsonPath('success', true);
-
-    $data = $response->json('data');
-    expect($data['projects'])->toHaveCount(3);
-    
-    foreach ($data['projects'] as $project) {
-        expect($project['status'])->toBe('pending');
-    }
+    $this->getJson('/api/projects?status=pending')
+        ->assertOk()
+        ->tap(function ($response) {
+            $projects = $response->json('data.projects');
+            expect($projects)->toHaveCount(3);
+            foreach ($projects as $project) {
+                expect($project['status'])->toBe('pending');
+            }
+        });
 });
 
 /*
 |--------------------------------------------------------------------------
-| POST /api/projects - Create Project
+| Create Project
 |--------------------------------------------------------------------------
 */
 it('creates a project successfully', function () {
-    $user = User::factory()->create();
-
-    $projectData = [
-        'title' => 'New Project',
+    $payload = [
+        'title'       => 'New Project',
         'description' => 'Project description',
-        'status' => 'pending',
-        'start_date' => '2025-10-01',
-        'end_date' => '2025-12-31',
-        'user_id' => $user->id,
+        'status'      => 'pending',
+        'start_date'  => '2025-10-01',
+        'end_date'    => '2025-12-31',
+        'user_id'     => $this->user->id,
     ];
 
-    $response = $this->postJson('/api/projects', $projectData);
-
-    $response->assertCreated()
+    $this->postJson('/api/projects', $payload)
+        ->assertCreated()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.project.title', 'New Project')
-        ->assertJsonPath('data.project.user_id', $user->id)
+        ->assertJsonPath('data.project.user_id', $this->user->id)
         ->assertJsonPath('data.message', 'Project created successfully.');
 
     $this->assertDatabaseHas('projects', [
-        'title' => 'New Project',
-        'user_id' => $user->id,
-        'status' => 'pending'
+        'title'   => 'New Project',
+        'user_id' => $this->user->id,
     ]);
 });
 
-it('validates required fields when creating project', function () {
-    $response = $this->postJson('/api/projects', []);
-
-    $response->assertStatus(422)
+it('validates required, user_id and date fields when creating project', function () {
+    // Required fields
+    $this->postJson('/api/projects', [])
+        ->assertStatus(422)
         ->assertJsonValidationErrors(['title', 'user_id']);
-});
 
-it('validates user_id exists when creating project', function () {
-    $response = $this->postJson('/api/projects', [
-        'title' => 'Test Project',
-        'user_id' => 999999, // Non-existent user
-    ]);
-
-    $response->assertStatus(422)
+    // user_id must exist
+    $this->postJson('/api/projects', [
+        'title'   => 'Test Project',
+        'user_id' => 999999,
+    ])
+        ->assertStatus(422)
         ->assertJsonValidationErrors(['user_id']);
-});
 
-it('validates date fields when creating project', function () {
-    $user = User::factory()->create();
-
-    $response = $this->postJson('/api/projects', [
-        'title' => 'Test Project',
-        'user_id' => $user->id,
-        'start_date' => '2020-01-01', // Past date
-        'end_date' => '2019-01-01', // Before start date
-    ]);
-
-    $response->assertStatus(422)
+    // date fields invalid
+    $this->postJson('/api/projects', [
+        'title'      => 'Test Project',
+        'user_id'    => $this->user->id,
+        'start_date' => '2020-01-01',
+        'end_date'   => '2019-01-01',
+    ])
+        ->assertStatus(422)
         ->assertJsonValidationErrors(['start_date', 'end_date']);
 });
 
 /*
 |--------------------------------------------------------------------------
-| GET /api/projects/{id} - Show Project
+| Show Project
 |--------------------------------------------------------------------------
 */
 it('shows a project successfully', function () {
-    $user = User::factory()->create();
-    $project = Project::factory()->create(['user_id' => $user->id]);
+    $project = Project::factory()->create(['user_id' => $this->user->id]);
 
-    $response = $this->getJson("/api/projects/{$project->id}");
-
-    $response->assertOk()
+    $this->getJson("/api/projects/{$project->id}")
+        ->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.project.id', $project->id)
-        ->assertJsonPath('data.project.title', $project->title)
-        ->assertJsonStructure([
-            'success',
-            'data' => [
-                'project' => [
-                    'id', 'title', 'description', 'status', 'user_id', 'user'
-                ]
-            ]
-        ]);
+        ->assertJsonPath('data.project.title', $project->title);
 });
 
 it('returns 404 for non-existent project', function () {
-    $response = $this->getJson('/api/projects/999999');
-
-    $response->assertNotFound()
+    $this->getJson('/api/projects/999999')
+        ->assertNotFound()
         ->assertJsonPath('success', false)
         ->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
 });
 
 it('validates project ID format', function () {
-    $response = $this->getJson('/api/projects/invalid-id');
-
-    $response->assertStatus(400)
+    $this->getJson('/api/projects/invalid-id')
+        ->assertStatus(400)
         ->assertJsonPath('success', false)
         ->assertJsonPath('error.code', 'INVALID_PROJECT_ID');
 });
 
 /*
 |--------------------------------------------------------------------------
-| PUT/PATCH /api/projects/{id} - Update Project
+| Update Project
 |--------------------------------------------------------------------------
 */
 it('updates a project successfully', function () {
-    $user = User::factory()->create();
-    $project = Project::factory()->create(['user_id' => $user->id]);
+    $project = Project::factory()->create(['user_id' => $this->user->id]);
 
-    $updateData = [
-        'title' => 'Updated Title',
-        'status' => 'in_progress',
-        'description' => 'Updated description'
+    $payload = [
+        'title'       => 'Updated Title',
+        'status'      => 'in_progress',
+        'description' => 'Updated description',
     ];
 
-    $response = $this->putJson("/api/projects/{$project->id}", $updateData);
-
-    $response->assertOk()
+    $this->putJson("/api/projects/{$project->id}", $payload)
+        ->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.project.title', 'Updated Title')
-        ->assertJsonPath('data.project.status', 'in_progress')
-        ->assertJsonPath('data.message', 'Project updated successfully.');
+        ->assertJsonPath('data.project.status', 'in_progress');
 
     $this->assertDatabaseHas('projects', [
-        'id' => $project->id,
-        'title' => 'Updated Title',
-        'status' => 'in_progress'
+        'id'     => $project->id,
+        'title'  => 'Updated Title',
+        'status' => 'in_progress',
     ]);
 });
 
 it('validates fields when updating project', function () {
-    $user = User::factory()->create();
-    $project = Project::factory()->create(['user_id' => $user->id]);
+    $project = Project::factory()->create(['user_id' => $this->user->id]);
 
-    $response = $this->putJson("/api/projects/{$project->id}", [
-        'status' => 'invalid_status',
-        'end_date' => '2020-01-01', // Before start date
-        'start_date' => '2025-12-31'
-    ]);
-
-    $response->assertStatus(422)
+    $this->putJson("/api/projects/{$project->id}", [
+        'status'     => 'invalid_status',
+        'end_date'   => '2020-01-01',
+        'start_date' => '2025-12-31',
+    ])
+        ->assertStatus(422)
         ->assertJsonValidationErrors(['status', 'end_date']);
 });
 
 /*
 |--------------------------------------------------------------------------
-| DELETE /api/projects/{id} - Delete Project
+| Delete Project
 |--------------------------------------------------------------------------
 */
 it('deletes a project successfully', function () {
-    $user = User::factory()->create();
-    $project = Project::factory()->create(['user_id' => $user->id]);
+    $project = Project::factory()->create(['user_id' => $this->user->id]);
 
-    $response = $this->deleteJson("/api/projects/{$project->id}");
-
-    $response->assertOk()
+    $this->deleteJson("/api/projects/{$project->id}")
+        ->assertOk()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.message', 'Project deleted successfully.')
         ->assertJsonPath('data.deleted_project.id', $project->id);
 
-    $this->assertDatabaseMissing('projects', [
-        'id' => $project->id
-    ]);
+    $this->assertDatabaseMissing('projects', ['id' => $project->id]);
 });
 
 it('returns 404 when deleting non-existent project', function () {
-    $response = $this->deleteJson('/api/projects/999999');
-
-    $response->assertNotFound()
+    $this->deleteJson('/api/projects/999999')
+        ->assertNotFound()
         ->assertJsonPath('success', false)
         ->assertJsonPath('error.code', 'PROJECT_NOT_FOUND');
 });

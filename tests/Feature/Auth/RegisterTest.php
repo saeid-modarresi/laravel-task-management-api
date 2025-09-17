@@ -42,11 +42,11 @@ it('registers a user successfully', function () {
 |--------------------------------------------------------------------------
 */
 it('rejects duplicate email with 422', function () {
-    User::factory()->create(['email' => 'dupe@example.com']);
+    User::factory()->create(['email' => 'demo@example.com']);
 
     $res = $this->postJson('/api/register', [
         'name'     => 'X',
-        'email'    => 'dupe@example.com',
+        'email'    => 'demo@example.com',
         'password' => 'secret123',
     ]);
 
@@ -82,7 +82,7 @@ it('rejects weak passwords', function () {
     $response = $this->postJson('/api/register', [
         'name' => 'Test User',
         'email' => 'test@example.com',
-        'password' => '123', // Too short
+        'password' => '123',
     ]);
 
     $response->assertStatus(422)
@@ -110,6 +110,56 @@ it('validates email format', function () {
     $response = $this->postJson('/api/register', [
         'name' => 'Test User',
         'email' => 'invalid-email',
+        'password' => 'password123',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['email']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: password too short -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates password minimum length', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => '123', // Too short
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['password']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: name too long -> 422
+|--------------------------------------------------------------------------
+*/
+it('validates name maximum length', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => str_repeat('a', 300), // Too long (max 255)
+        'email' => 'test@example.com',
+        'password' => 'password123',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['name']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| validation: email too long -> 422  
+|--------------------------------------------------------------------------
+*/
+it('validates email maximum length', function () {
+    $longEmail = str_repeat('a', 250) . '@test.com'; // Too long (max 255)
+    
+    $response = $this->postJson('/api/register', [
+        'name' => 'Test User',
+        'email' => $longEmail,
         'password' => 'password123',
     ]);
 
