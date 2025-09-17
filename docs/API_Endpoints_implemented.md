@@ -578,6 +578,154 @@ Delete a comment by ID for a specific task.
 
 ---
 
+## Notification Management
+
+### `GET /api/users/{userId}/notifications`
+Get notifications for a specific user with optional filtering.
+
+**Query Parameters:**
+- `page` (optional): Page number for pagination (default: 1)
+- `per_page` (optional): Items per page (default: 15, max: 100)
+- `unread_only` (optional): Filter only unread notifications (true/false)
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "current_page": 1,
+    "data": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "type": "task_updated",
+        "data": {
+          "task_id": 5,
+          "task_title": "Update documentation",
+          "message": "A task has been updated",
+          "updated_fields": ["status", "due_date"],
+          "updated_at": "2025-01-15T10:00:00.000000Z"
+        },
+        "read_at": null,
+        "created_at": "2025-01-15T10:00:00.000000Z",
+        "updated_at": "2025-01-15T10:00:00.000000Z"
+      },
+      {
+        "id": 2,
+        "user_id": 1,
+        "type": "task_assigned",
+        "data": {
+          "task_id": 3,
+          "task_title": "Fix authentication bug",
+          "message": "A new task has been assigned to you",
+          "assigned_by": "John Doe"
+        },
+        "read_at": "2025-01-15T11:30:00.000000Z",
+        "created_at": "2025-01-15T09:00:00.000000Z",
+        "updated_at": "2025-01-15T11:30:00.000000Z"
+      }
+    ],
+    "first_page_url": "http://localhost/api/users/1/notifications?page=1",
+    "from": 1,
+    "last_page": 1,
+    "last_page_url": "http://localhost/api/users/1/notifications?page=1",
+    "links": [...],
+    "next_page_url": null,
+    "path": "http://localhost/api/users/1/notifications",
+    "per_page": 15,
+    "prev_page_url": null,
+    "to": 2,
+    "total": 2
+  }
+}
+```
+
+### `GET /api/users/{userId}/notifications/unread-count`
+Get the count of unread notifications for a user.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "unread_count": 5
+  }
+}
+```
+
+### `PATCH /api/users/{userId}/notifications/{notificationId}/read`
+Mark a specific notification as read.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Notification marked as read.",
+    "notification": {
+      "id": 1,
+      "user_id": 1,
+      "type": "task_updated",
+      "data": {...},
+      "read_at": "2025-01-15T12:00:00.000000Z",
+      "created_at": "2025-01-15T10:00:00.000000Z",
+      "updated_at": "2025-01-15T12:00:00.000000Z"
+    }
+  }
+}
+```
+
+### `PATCH /api/users/{userId}/notifications/mark-all-read`
+Mark all notifications as read for a user.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "All notifications marked as read.",
+    "updated_count": 8
+  }
+}
+```
+
+### `DELETE /api/users/{userId}/notifications/{notificationId}`
+Delete a specific notification.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Notification deleted successfully.",
+    "deleted_notification": {
+      "id": 1,
+      "type": "task_updated",
+      "user_id": 1
+    }
+  }
+}
+```
+
+**Error Responses for Notifications:**
+- `400 Bad Request` for invalid user or notification ID
+- `404 Not Found` if user or notification doesn't exist
+- `500 Server Error` for operation errors
+
+**Notification Types:**
+- `task_assigned`: When a task is assigned to a user
+- `task_updated`: When a task is updated
+- `task_completed`: When a task is marked as completed
+
+**Notification Data Structure:**
+Each notification contains a `data` field with contextual information:
+- `task_id`: ID of the related task
+- `task_title`: Title of the related task
+- `message`: Human-readable notification message
+- Additional fields based on notification type
+
+---
+
 ## 1) Quick cURL examples
 
 ### Authentication
@@ -713,6 +861,37 @@ curl -X DELETE http://localhost/api/tasks/1/comments/1 \
   -H "Accept: application/json"
 ```
 
+### Notifications
+```bash
+# Get all notifications for a user
+curl -X GET http://localhost/api/users/1/notifications \
+  -H "Accept: application/json"
+
+# Get only unread notifications
+curl -X GET "http://localhost/api/users/1/notifications?unread_only=true" \
+  -H "Accept: application/json"
+
+# Get notifications with pagination
+curl -X GET "http://localhost/api/users/1/notifications?page=2&per_page=10" \
+  -H "Accept: application/json"
+
+# Get unread count
+curl -X GET http://localhost/api/users/1/notifications/unread-count \
+  -H "Accept: application/json"
+
+# Mark notification as read
+curl -X PATCH http://localhost/api/users/1/notifications/1/read \
+  -H "Accept: application/json"
+
+# Mark all notifications as read
+curl -X PATCH http://localhost/api/users/1/notifications/mark-all-read \
+  -H "Accept: application/json"
+
+# Delete notification
+curl -X DELETE http://localhost/api/users/1/notifications/1 \
+  -H "Accept: application/json"
+```
+
 ---
 
 ## 2) Testing
@@ -737,6 +916,9 @@ docker compose exec laravel.test php artisan test tests/Feature/TasksTest.php
 # Comment management tests only
 docker compose exec laravel.test php artisan test tests/Feature/CommentsTest.php
 
+# Notification management tests only
+docker compose exec laravel.test php artisan test tests/Feature/NotificationsTest.php
+
 # All Auth-related tests
 docker compose exec laravel.test php artisan test tests/Feature/Auth/
 ```
@@ -748,6 +930,7 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/
 - **ProjectsTest.php**: Complete CRUD operations, filtering, validation, error handling, relationships
 - **TasksTest.php**: Complete CRUD operations, filtering by status and due date, full-text search, pagination, validation, error handling
 - **CommentsTest.php**: Complete CRUD operations for comments nested under tasks, task relationship validation, pagination, error handling, cascade deletion
+- **NotificationsTest.php**: Notification CRUD operations, async job processing, event handling, user relationship validation, read/unread status management
 
 With coverage (needs Xdebug enabled in the PHP container):
 ```powershell
