@@ -1,6 +1,6 @@
 # API endpoints implemented 
 
-This project includes **Authentication** and **User Management**. The following endpoints are available:
+This project includes **Authentication**, **User Management**, and **Project Management**. The following endpoints are available:
 
 ## Authentication Endpoints
 
@@ -93,6 +93,186 @@ Delete a user by ID.
 - `404 Not Found` if user doesn't exist
 - `500 Server Error` for deletion errors
 
+## Project Management Endpoints
+
+### `GET /api/projects`
+Get paginated list of projects with optional filtering.
+
+**Query Parameters:**
+- `per_page` (optional): Projects per page (default: 15, max: 100)
+- `page` (optional): Page number (default: 1)
+- `user_id` (optional): Filter by user ID
+- `status` (optional): Filter by status (pending, in_progress, completed, cancelled)
+
+**Example:** `GET /api/projects?per_page=10&page=2&status=in_progress&user_id=1`
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "projects": [
+      {
+        "id": 1,
+        "title": "Project Title",
+        "description": "Project description",
+        "status": "in_progress",
+        "start_date": "2025-01-01",
+        "end_date": "2025-12-31",
+        "user_id": 1,
+        "created_at": "2025-09-16T19:30:00.000000Z",
+        "updated_at": "2025-09-16T19:30:00.000000Z",
+        "user": {
+          "id": 1,
+          "name": "John Doe",
+          "email": "john@example.com"
+        }
+      }
+    ],
+    "pagination": {
+      "current_page": 1,
+      "total_pages": 3,
+      "per_page": 15,
+      "total_projects": 42,
+      "from": 1,
+      "to": 15
+    }
+  }
+}
+```
+
+### `POST /api/projects`
+Create a new project.
+
+**Body (JSON):**
+```json
+{
+  "title": "New Project",
+  "description": "Project description",
+  "status": "pending",
+  "start_date": "2025-01-01",
+  "end_date": "2025-12-31",
+  "user_id": 1
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "project": {
+      "id": 1,
+      "title": "New Project",
+      "description": "Project description",
+      "status": "pending",
+      "start_date": "2025-01-01",
+      "end_date": "2025-12-31",
+      "user_id": 1,
+      "created_at": "2025-09-16T19:30:00.000000Z",
+      "updated_at": "2025-09-16T19:30:00.000000Z",
+      "user": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      }
+    },
+    "message": "Project created successfully."
+  }
+}
+```
+
+### `GET /api/projects/{id}`
+Get a specific project by ID.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "project": {
+      "id": 1,
+      "title": "Project Title",
+      "description": "Project description",
+      "status": "in_progress",
+      "start_date": "2025-01-01",
+      "end_date": "2025-12-31",
+      "user_id": 1,
+      "created_at": "2025-09-16T19:30:00.000000Z",
+      "updated_at": "2025-09-16T19:30:00.000000Z",
+      "user": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      }
+    }
+  }
+}
+```
+
+### `PUT /api/projects/{id}`
+Update an existing project.
+
+**Body (JSON):**
+```json
+{
+  "title": "Updated Project Title",
+  "description": "Updated description",
+  "status": "completed",
+  "end_date": "2025-11-30"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "project": {
+      "id": 1,
+      "title": "Updated Project Title",
+      "description": "Updated description",
+      "status": "completed",
+      "start_date": "2025-01-01",
+      "end_date": "2025-11-30",
+      "user_id": 1,
+      "created_at": "2025-09-16T19:30:00.000000Z",
+      "updated_at": "2025-09-16T20:00:00.000000Z",
+      "user": {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      }
+    },
+    "message": "Project updated successfully."
+  }
+}
+```
+
+### `DELETE /api/projects/{id}`
+Delete a project by ID.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Project deleted successfully.",
+    "deleted_project": {
+      "id": 1,
+      "title": "Project Title",
+      "user_id": 1
+    }
+  }
+}
+```
+
+**Error Responses for Projects:**
+- `400 Bad Request` for invalid project ID
+- `404 Not Found` if project doesn't exist
+- `422 Unprocessable Entity` for validation errors
+- `500 Server Error` for operation errors
+
 ---
 
 ## 1) Quick cURL examples
@@ -133,6 +313,37 @@ curl -X DELETE http://localhost/api/users/1 \
   -H "Accept: application/json"
 ```
 
+### Project Management
+```bash
+# Get projects list
+curl -X GET http://localhost/api/projects \
+  -H "Accept: application/json"
+
+# Get projects with filtering
+curl -X GET "http://localhost/api/projects?per_page=10&status=in_progress&user_id=1" \
+  -H "Accept: application/json"
+
+# Create project
+curl -X POST http://localhost/api/projects \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"title":"New Project","description":"Description","user_id":1,"status":"pending"}'
+
+# Get specific project
+curl -X GET http://localhost/api/projects/1 \
+  -H "Accept: application/json"
+
+# Update project
+curl -X PUT http://localhost/api/projects/1 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"title":"Updated Title","status":"completed"}'
+
+# Delete project
+curl -X DELETE http://localhost/api/projects/1 \
+  -H "Accept: application/json"
+```
+
 ---
 
 ## 2) Testing
@@ -148,6 +359,9 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/RegisterTes
 # User management tests only
 docker compose exec laravel.test php artisan test tests/Feature/Auth/UsersTest.php
 
+# Project management tests only
+docker compose exec laravel.test php artisan test tests/Feature/ProjectsTest.php
+
 # All Auth-related tests
 docker compose exec laravel.test php artisan test tests/Feature/Auth/
 ```
@@ -156,6 +370,7 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/
 - **LoginTest.php**: Login success, invalid credentials, rate limiting
 - **RegisterTest.php**: Registration success, validation errors, duplicate email, rate limiting
 - **UsersTest.php**: List users with pagination, delete users, validation, error handling
+- **ProjectsTest.php**: Complete CRUD operations, filtering, validation, error handling, relationships
 
 With coverage (needs Xdebug enabled in the PHP container):
 ```powershell
