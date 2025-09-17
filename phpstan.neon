@@ -1,18 +1,22 @@
 parameters:
-    paths:
-        - app/
-        - config/
-        - database/
-        - routes/
-    level: 3
-    ignoreErrors:
-        - '#Call to an undefined static method App\\Models\\.*::#'
-        - '#Access to an undefined property App\\Models\\.*::#'
-        - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
-        - '#Undefined variable: \$this#'
-        - '#Call to an undefined method Illuminate\\Database\\Query\\Builder::by.*\(\)#'
-    excludePaths:
-        - */vendor/*
-        - */node_modules/*
-        - */storage/*
-        - bootstrap/cache/*
+  paths:
+    - app
+    - config
+    - database
+    - routes
+  level: 3
+
+  reportUnmatchedIgnoredErrors: false
+
+  ignoreErrors:
+    - message: '~Call to an undefined static method App\\\\Models\\\\.*::~'
+    - message: '~Access to an undefined property App\\\\Models\\\\.*::~'
+    - message: '~Call to an undefined static method Illuminate\\\\Support\\\\Facades\\\\Cache::getRedis~'
+    - message: '~Undefined variable: \\$this~'
+    - message: '~Call to an undefined method Illuminate\\\\Database\\\\Query\\\\Builder::by.*\\(\\)~'
+
+  excludePaths:
+    - */vendor/*
+    - */node_modules/*
+    - */storage/*
+    - bootstrap/cache/*
