@@ -19,6 +19,9 @@ class AppServiceProvider extends ServiceProvider
             \App\Repositories\Contracts\TaskRepositoryInterface::class,
             \App\Repositories\TaskRepository::class
         );
+
+        // Register Service bindings  
+        $this->app->singleton(\App\Services\TaskService::class);
     }
 
     /**
