@@ -1,6 +1,6 @@
 # API endpoints implemented 
 
-This project includes **Authentication**, **User Management**, **Project Management**, and **Task Management**. The following endpoints are available:
+This project includes **Authentication**, **User Management**, **Project Management**, **Task Management**, and **Comment Management**. The following endpoints are available:
 
 ## Authentication Endpoints
 
@@ -438,6 +438,146 @@ Delete a task by ID.
 
 ---
 
+## Comment Management
+
+### `GET /api/tasks/{taskId}/comments`
+List all comments for a specific task with pagination.
+
+**Query Parameters:**
+- `page` (optional): Page number for pagination (default: 1)
+- `per_page` (optional): Items per page (default: 15, max: 100)
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "current_page": 1,
+    "data": [
+      {
+        "id": 1,
+        "task_id": 1,
+        "content": "This is a comment on the task",
+        "created_at": "2025-01-15T10:00:00.000000Z",
+        "updated_at": "2025-01-15T10:00:00.000000Z"
+      },
+      {
+        "id": 2,
+        "task_id": 1,
+        "content": "Another comment",
+        "created_at": "2025-01-15T09:00:00.000000Z",
+        "updated_at": "2025-01-15T09:00:00.000000Z"
+      }
+    ],
+    "first_page_url": "http://localhost/api/tasks/1/comments?page=1",
+    "from": 1,
+    "last_page": 1,
+    "last_page_url": "http://localhost/api/tasks/1/comments?page=1",
+    "links": [...],
+    "next_page_url": null,
+    "path": "http://localhost/api/tasks/1/comments",
+    "per_page": 15,
+    "prev_page_url": null,
+    "to": 2,
+    "total": 2
+  }
+}
+```
+
+### `POST /api/tasks/{taskId}/comments`
+Create a new comment for a specific task.
+
+**Request Body:**
+```json
+{
+  "content": "This is a new comment"
+}
+```
+
+**Validation Rules:**
+- `content`: required, string
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 3,
+    "task_id": 1,
+    "content": "This is a new comment",
+    "created_at": "2025-01-15T15:00:00.000000Z",
+    "updated_at": "2025-01-15T15:00:00.000000Z"
+  }
+}
+```
+
+### `GET /api/tasks/{taskId}/comments/{commentId}`
+Get a specific comment by ID for a specific task.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "task_id": 1,
+    "content": "This is a comment on the task",
+    "created_at": "2025-01-15T10:00:00.000000Z",
+    "updated_at": "2025-01-15T10:00:00.000000Z"
+  }
+}
+```
+
+### `PUT /api/tasks/{taskId}/comments/{commentId}`
+Update a comment by ID for a specific task.
+
+**Request Body:**
+```json
+{
+  "content": "Updated comment content"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "task_id": 1,
+    "content": "Updated comment content",
+    "created_at": "2025-01-15T10:00:00.000000Z",
+    "updated_at": "2025-01-15T16:00:00.000000Z"
+  }
+}
+```
+
+### `DELETE /api/tasks/{taskId}/comments/{commentId}`
+Delete a comment by ID for a specific task.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Comment deleted successfully.",
+    "deleted_comment": {
+      "id": 1,
+      "content": "This is a comment on the task...",
+      "task_id": 1
+    }
+  }
+}
+```
+
+**Error Responses for Comments:**
+- `400 Bad Request` for invalid task or comment ID
+- `404 Not Found` if task or comment doesn't exist
+- `422 Unprocessable Entity` for validation errors
+- `500 Server Error` for operation errors
+
+---
+
 ## 1) Quick cURL examples
 
 ### Authentication
@@ -542,6 +682,37 @@ curl -X DELETE http://localhost/api/tasks/1 \
   -H "Accept: application/json"
 ```
 
+### Comments
+```bash
+# Get all comments for a task
+curl -X GET http://localhost/api/tasks/1/comments \
+  -H "Accept: application/json"
+
+# Get comments with pagination
+curl -X GET "http://localhost/api/tasks/1/comments?page=2&per_page=10" \
+  -H "Accept: application/json"
+
+# Create comment for a task
+curl -X POST http://localhost/api/tasks/1/comments \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"content":"This is a new comment"}'
+
+# Get specific comment
+curl -X GET http://localhost/api/tasks/1/comments/1 \
+  -H "Accept: application/json"
+
+# Update comment
+curl -X PUT http://localhost/api/tasks/1/comments/1 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"content":"Updated comment content"}'
+
+# Delete comment
+curl -X DELETE http://localhost/api/tasks/1/comments/1 \
+  -H "Accept: application/json"
+```
+
 ---
 
 ## 2) Testing
@@ -563,6 +734,9 @@ docker compose exec laravel.test php artisan test tests/Feature/ProjectsTest.php
 # Task management tests only
 docker compose exec laravel.test php artisan test tests/Feature/TasksTest.php
 
+# Comment management tests only
+docker compose exec laravel.test php artisan test tests/Feature/CommentsTest.php
+
 # All Auth-related tests
 docker compose exec laravel.test php artisan test tests/Feature/Auth/
 ```
@@ -573,6 +747,7 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/
 - **UsersTest.php**: List users with pagination, delete users, validation, error handling
 - **ProjectsTest.php**: Complete CRUD operations, filtering, validation, error handling, relationships
 - **TasksTest.php**: Complete CRUD operations, filtering by status and due date, full-text search, pagination, validation, error handling
+- **CommentsTest.php**: Complete CRUD operations for comments nested under tasks, task relationship validation, pagination, error handling, cascade deletion
 
 With coverage (needs Xdebug enabled in the PHP container):
 ```powershell
