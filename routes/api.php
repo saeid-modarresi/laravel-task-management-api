@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\TaskController;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,3 +29,10 @@ Route::delete('/users/{id}', [UserController::class, 'removeUser']);
 |--------------------------------------------------------------------------
 */
 Route::apiResource('projects', ProjectController::class);
+
+/*
+|--------------------------------------------------------------------------
+| Task Management Routes
+|--------------------------------------------------------------------------
+*/
+Route::apiResource('tasks', TaskController::class);
