@@ -1,6 +1,6 @@
 # API endpoints implemented 
 
-This project includes **Authentication**, **User Management**, and **Project Management**. The following endpoints are available:
+This project includes **Authentication**, **User Management**, **Project Management**, and **Task Management**. The following endpoints are available:
 
 ## Authentication Endpoints
 
@@ -275,6 +275,169 @@ Delete a project by ID.
 
 ---
 
+## Task Management
+
+### `GET /api/tasks`
+List all tasks with optional filtering, search, and pagination.
+
+**Query Parameters:**
+- `status` (optional): Filter by status (`todo`, `in-progress`, `done`)
+- `due_before` (optional): Filter tasks due before a date (YYYY-MM-DD)
+- `due_after` (optional): Filter tasks due after a date (YYYY-MM-DD)
+- `search` (optional): Full-text search in title and description
+- `page` (optional): Page number for pagination (default: 1)
+- `per_page` (optional): Items per page (default: 15, max: 100)
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "current_page": 1,
+    "data": [
+      {
+        "id": 1,
+        "title": "Complete documentation",
+        "description": "Update API documentation with new endpoints",
+        "status": "in-progress",
+        "due_date": "2025-01-20",
+        "created_at": "2025-01-15T10:00:00.000000Z",
+        "updated_at": "2025-01-15T14:30:00.000000Z"
+      },
+      {
+        "id": 2,
+        "title": "Fix authentication bug",
+        "description": "Resolve login timeout issue",
+        "status": "todo",
+        "due_date": null,
+        "created_at": "2025-01-15T09:00:00.000000Z",
+        "updated_at": "2025-01-15T09:00:00.000000Z"
+      }
+    ],
+    "first_page_url": "http://localhost/api/tasks?page=1",
+    "from": 1,
+    "last_page": 1,
+    "last_page_url": "http://localhost/api/tasks?page=1",
+    "links": [...],
+    "next_page_url": null,
+    "path": "http://localhost/api/tasks",
+    "per_page": 15,
+    "prev_page_url": null,
+    "to": 2,
+    "total": 2
+  }
+}
+```
+
+### `POST /api/tasks`
+Create a new task.
+
+**Request Body:**
+```json
+{
+  "title": "New task",
+  "description": "Task description",
+  "status": "todo",
+  "due_date": "2025-01-25"
+}
+```
+
+**Validation Rules:**
+- `title`: required, string, max:255
+- `description`: optional, string
+- `status`: optional, enum (`todo`, `in-progress`, `done`), default: `todo`
+- `due_date`: optional, date format (YYYY-MM-DD)
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 3,
+    "title": "New task",
+    "description": "Task description",
+    "status": "todo",
+    "due_date": "2025-01-25",
+    "created_at": "2025-01-15T15:00:00.000000Z",
+    "updated_at": "2025-01-15T15:00:00.000000Z"
+  }
+}
+```
+
+### `GET /api/tasks/{id}`
+Get a specific task by ID.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "title": "Complete documentation",
+    "description": "Update API documentation with new endpoints",
+    "status": "in-progress",
+    "due_date": "2025-01-20",
+    "created_at": "2025-01-15T10:00:00.000000Z",
+    "updated_at": "2025-01-15T14:30:00.000000Z"
+  }
+}
+```
+
+### `PUT /api/tasks/{id}`
+Update a task by ID.
+
+**Request Body:**
+```json
+{
+  "title": "Updated task title",
+  "description": "Updated description",
+  "status": "done",
+  "due_date": "2025-01-22"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "title": "Updated task title",
+    "description": "Updated description",
+    "status": "done",
+    "due_date": "2025-01-22",
+    "created_at": "2025-01-15T10:00:00.000000Z",
+    "updated_at": "2025-01-15T16:00:00.000000Z"
+  }
+}
+```
+
+### `DELETE /api/tasks/{id}`
+Delete a task by ID.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Task deleted successfully.",
+    "deleted_task": {
+      "id": 1,
+      "title": "Updated task title",
+      "status": "done"
+    }
+  }
+}
+```
+
+**Error Responses for Tasks:**
+- `400 Bad Request` for invalid task ID
+- `404 Not Found` if task doesn't exist
+- `422 Unprocessable Entity` for validation errors
+- `500 Server Error` for operation errors
+
+---
+
 ## 1) Quick cURL examples
 
 ### Authentication
@@ -344,6 +507,41 @@ curl -X DELETE http://localhost/api/projects/1 \
   -H "Accept: application/json"
 ```
 
+### Tasks
+```bash
+# Get all tasks
+curl -X GET http://localhost/api/tasks \
+  -H "Accept: application/json"
+
+# Get tasks with filtering
+curl -X GET "http://localhost/api/tasks?status=in-progress&due_before=2025-01-20&search=documentation" \
+  -H "Accept: application/json"
+
+# Get tasks with pagination
+curl -X GET "http://localhost/api/tasks?page=2&per_page=10" \
+  -H "Accept: application/json"
+
+# Create task
+curl -X POST http://localhost/api/tasks \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"title":"New task","description":"Task description","status":"todo","due_date":"2025-01-25"}'
+
+# Get specific task
+curl -X GET http://localhost/api/tasks/1 \
+  -H "Accept: application/json"
+
+# Update task
+curl -X PUT http://localhost/api/tasks/1 \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"title":"Updated task","status":"done","due_date":"2025-01-22"}'
+
+# Delete task
+curl -X DELETE http://localhost/api/tasks/1 \
+  -H "Accept: application/json"
+```
+
 ---
 
 ## 2) Testing
@@ -362,6 +560,9 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/UsersTest.p
 # Project management tests only
 docker compose exec laravel.test php artisan test tests/Feature/ProjectsTest.php
 
+# Task management tests only
+docker compose exec laravel.test php artisan test tests/Feature/TasksTest.php
+
 # All Auth-related tests
 docker compose exec laravel.test php artisan test tests/Feature/Auth/
 ```
@@ -371,6 +572,7 @@ docker compose exec laravel.test php artisan test tests/Feature/Auth/
 - **RegisterTest.php**: Registration success, validation errors, duplicate email, rate limiting
 - **UsersTest.php**: List users with pagination, delete users, validation, error handling
 - **ProjectsTest.php**: Complete CRUD operations, filtering, validation, error handling, relationships
+- **TasksTest.php**: Complete CRUD operations, filtering by status and due date, full-text search, pagination, validation, error handling
 
 With coverage (needs Xdebug enabled in the PHP container):
 ```powershell
