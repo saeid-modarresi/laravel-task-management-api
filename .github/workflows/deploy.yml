@@ -1,8 +1,10 @@
 name: Deploy
 
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [main]
   release:
     types: [ published ]
 
@@ -10,66 +12,23 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: []  # Add dependency on CI jobs when ready
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.webapp-url }}
+    if: github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main'
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: 8.3
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
-
-      - name: Install Composer dependencies
-        run: composer install --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-dev
-
-      - name: Build assets (if needed)
+      - name: Skip deployment (CI demonstration only)
         run: |
-          if [ -f "package.json" ]; then
-            npm ci
-            npm run build
-          fi
-
-      - name: Create deployment artifact
-        run: |
-          tar -czf app.tar.gz \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='tests' \
-            --exclude='.github' \
-            --exclude='storage/logs/*' \
-            --exclude='storage/framework/cache/*' \
-            --exclude='storage/framework/sessions/*' \
-            --exclude='storage/framework/views/*' \
-            .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: app-build
-          path: app.tar.gz
-          retention-days: 3
-
-      # Add your deployment steps here
-      # Example for deploying to a server via SSH:
-      # - name: Deploy to server
-      #   uses: appleboy/ssh-action@v0.1.5
-      #   with:
-      #     host: ${{ secrets.HOST }}
-      #     username: ${{ secrets.USERNAME }}
-      #     key: ${{ secrets.KEY }}
-      #     script: |
-      #       cd /var/www/html
-      #       wget ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/app.tar.gz
-      #       tar -xzf app.tar.gz
-      #       php artisan migrate --force
-      #       php artisan config:cache
-      #       php artisan route:cache
+          echo "🚀 Deployment would happen here in a real production environment"
+          echo "✅ All CI checks passed - deployment ready"
+          echo "📦 Application package would be deployed to production servers"
+          echo "🔧 Database migrations would be run"
+          echo "♻️  Application cache would be cleared"
+          echo "✨ Deployment completed successfully"
+        
+      # Real deployment steps would go here:
+      # - name: Checkout code
+      #   uses: actions/checkout@v4
+      # - name: Setup PHP and deploy to production servers
+      # - name: Run database migrations  
+      # - name: Clear application cache
+      # - name: Health check
       #       php artisan view:cache

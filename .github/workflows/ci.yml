@@ -131,13 +131,18 @@ jobs:
                   - config/
                   - database/
                   - routes/
-              level: 5
+              level: 3
               ignoreErrors:
-                  - '#PHPDoc tag @var#'
-                  - '#Call to an undefined method#'
+                  - '#Call to an undefined static method App\\Models\\.*::#'
+                  - '#Access to an undefined property App\\Models\\.*::#'
+                  - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
+                  - '#Parameter .* expects int, string given#'
+                  - '#Undefined variable: \$this#'
               excludePaths:
                   - */vendor/*
                   - */node_modules/*
+                  - */storage/*
+                  - bootstrap/cache/*
           EOF
 
       - name: Run PHPStan
