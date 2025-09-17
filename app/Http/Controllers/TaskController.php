@@ -2,61 +2,33 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Task;
-use App\Events\TaskUpdated;
+use App\Services\TaskService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use Exception;
 
 class TaskController extends Controller
 {
+    public function __construct(
+        private TaskService $taskService
+    ) {}
+
     /**
      * Display a listing of tasks.
      */
     public function index(Request $request)
     {
         try {
-            $perPage = $request->get('per_page', 15);
-            $status = $request->get('status');
-            $dueBefore = $request->get('due_before');
-            $dueAfter = $request->get('due_after');
-            $search = $request->get('search');
-            $overdue = $request->get('overdue');
+            $filters = [
+                'per_page' => $request->get('per_page', 15),
+                'status' => $request->get('status'),
+                'due_before' => $request->get('due_before'),
+                'due_after' => $request->get('due_after'),
+                'search' => $request->get('search'),
+                'overdue' => $request->get('overdue') === 'true' || $request->get('overdue') === '1'
+            ];
 
-            // Limit per_page to maximum 100
-            if ($perPage > 100) {
-                $perPage = 100;
-            }
-
-            $query = Task::select(['id', 'title', 'description', 'status', 'due_date', 'created_at', 'updated_at']);
-
-            // Filter by status if provided
-            // Note: We need to debug this validation - initially wasn't working with enum values
-            if ($status && in_array($status, array_keys(Task::getStatusOptions()))) {
-                $query->byStatus($status);
-            }
-
-            // Filter by due date range
-            if ($dueBefore) {
-                $query->dueBefore($dueBefore);
-            }
-
-            if ($dueAfter) {
-                $query->dueAfter($dueAfter);
-            }
-
-            // TODO: Consider using Laravel Scout for better search performance
-            if ($search) {
-                $query->search($search);
-            }
-
-            // Filter overdue tasks
-            if ($overdue === 'true' || $overdue === '1') {
-                $query->overdue();
-            }
-
-            $tasks = $query->orderBy('created_at', 'desc')->paginate($perPage);
+            $tasks = $this->taskService->getPaginatedTasks($filters);
 
             return response()->json([
                 'success' => true,
@@ -103,20 +75,11 @@ class TaskController extends Controller
         ]);
 
         try {
-            // Create task using database transaction
-            $task = DB::transaction(function () use ($data) {
-                return Task::create([
-                    'title' => $data['title'],
-                    'description' => $data['description'] ?? null,
-                    'status' => $data['status'] ?? 'todo',
-                    'due_date' => $data['due_date'] ?? null,
-                ]);
-            });
-
-            Log::info('Task created successfully', [
-                'task_id' => $task->id,
-                'title' => $task->title,
-                'ip' => $request->ip()
+            $task = $this->taskService->createTask([
+                'title' => $data['title'],
+                'description' => $data['description'] ?? null,
+                'status' => $data['status'] ?? 'todo',
+                'due_date' => $data['due_date'] ?? null,
             ]);
 
             return response()->json([
@@ -151,7 +114,7 @@ class TaskController extends Controller
     {
         try {
             // Validate ID format
-            if (!is_numeric($id) || $id <= 0) {
+            if (!$this->taskService->isValidTaskId($id)) {
                 return response()->json([
                     'success' => false,
                     'error' => [
@@ -161,7 +124,7 @@ class TaskController extends Controller
                 ], 400);
             }
 
-            $task = Task::find($id);
+            $task = $this->taskService->findTask($id);
 
             if (!$task) {
                 return response()->json([
@@ -203,31 +166,7 @@ class TaskController extends Controller
     public function update(Request $request, string $id)
     {
         try {
-            // Validate ID format
-            if (!is_numeric($id) || $id <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'INVALID_TASK_ID',
-                        'message' => 'Invalid task ID provided.'
-                    ]
-                ], 400);
-            }
-
-            // Find task
-            $task = Task::find($id);
-
-            if (!$task) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'TASK_NOT_FOUND',
-                        'message' => 'Task not found.'
-                    ]
-                ], 404);
-            }
-
-            // Validation - This will automatically return 422 on validation failure
+            // Validate data first
             $data = $request->validate([
                 'title' => ['sometimes', 'string', 'max:255'],
                 'description' => ['nullable', 'string', 'max:5000'],
@@ -235,31 +174,7 @@ class TaskController extends Controller
                 'due_date' => ['nullable', 'date'],
             ]);
 
-            // Update task using database transaction
-            $updatedTask = DB::transaction(function () use ($task, $data) {
-                $originalData = $task->getOriginal();
-                
-                $task->update(array_filter($data, function($value) {
-                    return $value !== null;
-                }));
-                
-                // Get updated fields for event
-                $updatedFields = array_keys(array_filter($data, function($value) {
-                    return $value !== null;
-                }));
-                
-                // Fire event for notifications
-                TaskUpdated::dispatch($task, $updatedFields);
-                
-                // Reload to get fresh data
-                return $task->fresh();
-            });
-
-            Log::info('Task updated successfully', [
-                'task_id' => $task->id,
-                'title' => $task->title,
-                'ip' => $request->ip()
-            ]);
+            $updatedTask = $this->taskService->updateTask($id, $data);
 
             return response()->json([
                 'success' => true,
@@ -272,6 +187,22 @@ class TaskController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             // Re-throw validation exceptions to be handled by Laravel
             throw $e;
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'TASK_NOT_FOUND',
+                    'message' => 'Task not found.'
+                ]
+            ], 404);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'INVALID_TASK_ID',
+                    'message' => 'Invalid task ID provided.'
+                ]
+            ], 400);
         } catch (Exception $e) {
             Log::error('Task update error', [
                 'task_id' => $id,
@@ -296,43 +227,7 @@ class TaskController extends Controller
     public function destroy(string $id)
     {
         try {
-            // Validate ID format
-            if (!is_numeric($id) || $id <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'INVALID_TASK_ID',
-                        'message' => 'Invalid task ID provided.'
-                    ]
-                ], 400);
-            }
-
-            // Find task
-            $task = Task::find($id);
-
-            if (!$task) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'TASK_NOT_FOUND',
-                        'message' => 'Task not found.'
-                    ]
-                ], 404);
-            }
-
-            // Store task data for response before deletion
-            $deletedTask = [
-                'id' => $task->id,
-                'title' => $task->title,
-                'status' => $task->status
-            ];
-
-            // Delete task using database transaction
-            DB::transaction(function () use ($task) {
-                $task->delete();
-            });
-
-            Log::info('Task deleted successfully', $deletedTask);
+            $deletedTask = $this->taskService->deleteTask($id);
 
             return response()->json([
                 'success' => true,
@@ -342,6 +237,22 @@ class TaskController extends Controller
                 ]
             ]);
 
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'TASK_NOT_FOUND',
+                    'message' => 'Task not found.'
+                ]
+            ], 404);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'INVALID_TASK_ID',
+                    'message' => 'Invalid task ID provided.'
+                ]
+            ], 400);
         } catch (Exception $e) {
             Log::error('Task deletion error', [
                 'task_id' => $id,
