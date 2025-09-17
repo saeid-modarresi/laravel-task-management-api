@@ -99,7 +99,7 @@ jobs:
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -108,47 +108,30 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: 8.3
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, redis, mysql, pdo_mysql
           tools: composer:v2
 
       - name: Cache Composer dependencies
         uses: actions/cache@v3
         with:
           path: ~/.composer/cache/files
-          key: composer-static-analysis-${{ hashFiles('composer.lock') }}
+          key: composer-static-analysis-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-static-analysis-${{ runner.os }}-
+            composer-${{ runner.os }}-
 
       - name: Install Composer dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
-      - name: Install PHPStan
-        run: composer require --dev phpstan/phpstan --no-interaction
-
-      - name: Create PHPStan config
+      - name: Show phpstan.neon used
         run: |
-          cat > phpstan.neon << EOF
-          parameters:
-              paths:
-                  - app/
-                  - config/
-                  - database/
-                  - routes/
-              level: 3
-              ignoreErrors:
-                  - '#Call to an undefined static method App\\Models\\.*::#'
-                  - '#Access to an undefined property App\\Models\\.*::#'
-                  - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
-                  - '#Parameter .* expects int, string given#'
-                  - '#Undefined variable: \$this#'
-              excludePaths:
-                  - */vendor/*
-                  - */node_modules/*
-                  - */storage/*
-                  - bootstrap/cache/*
-          EOF
+          echo "Using phpstan.neon from repo:"
+          sed -n '1,200p' phpstan.neon || true
 
       - name: Run PHPStan
-        run: ./vendor/bin/phpstan analyse --memory-limit=2G --no-progress
+        run: ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=github --memory-limit=1G
         timeout-minutes: 5
+
 
   code-style:
     name: Code Style
