@@ -201,7 +201,85 @@ class ProjectController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
+        try {
+            // Validate ID format
+            if (!is_numeric($id) || $id <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'error' => [
+                        'code' => 'INVALID_PROJECT_ID',
+                        'message' => 'Invalid project ID provided.'
+                    ]
+                ], 400);
+            }
+
+            // Find project
+            $project = Project::find($id);
+
+            if (!$project) {
+                return response()->json([
+                    'success' => false,
+                    'error' => [
+                        'code' => 'PROJECT_NOT_FOUND',
+                        'message' => 'Project not found.'
+                    ]
+                ], 404);
+            }
+
+            // Validation - This will automatically return 422 on validation failure
+            $data = $request->validate([
+                'title' => ['sometimes', 'string', 'max:255'],
+                'description' => ['nullable', 'string', 'max:5000'],
+                'status' => ['sometimes', 'string', 'in:pending,in_progress,completed,cancelled'],
+                'start_date' => ['nullable', 'date'],
+                'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+                'user_id' => ['sometimes', 'integer', 'exists:users,id'],
+            ]);
+
+            // Update project using database transaction
+            $updatedProject = DB::transaction(function () use ($project, $data) {
+                $project->update(array_filter($data, function($value) {
+                    return $value !== null;
+                }));
+                
+                // Reload to get fresh data
+                return $project->fresh(['user']);
+            });
+
+            Log::info('Project updated successfully', [
+                'project_id' => $project->id,
+                'title' => $project->title,
+                'user_id' => $project->user_id,
+                'ip' => $request->ip()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'project' => $updatedProject,
+                    'message' => 'Project updated successfully.'
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Re-throw validation exceptions to be handled by Laravel
+            throw $e;
+        } catch (Exception $e) {
+            Log::error('Project update error', [
+                'project_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'UPDATE_ERROR',
+                    'message' => 'Unable to update project. Please try again.'
+                ]
+            ], 500);
+        }
     }
 
     /**
@@ -209,6 +287,67 @@ class ProjectController extends Controller
      */
     public function destroy(string $id)
     {
-        //
+        try {
+            // Validate ID format
+            if (!is_numeric($id) || $id <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'error' => [
+                        'code' => 'INVALID_PROJECT_ID',
+                        'message' => 'Invalid project ID provided.'
+                    ]
+                ], 400);
+            }
+
+            // Find project
+            $project = Project::find($id);
+
+            if (!$project) {
+                return response()->json([
+                    'success' => false,
+                    'error' => [
+                        'code' => 'PROJECT_NOT_FOUND',
+                        'message' => 'Project not found.'
+                    ]
+                ], 404);
+            }
+
+            // Store project data for response before deletion
+            $deletedProject = [
+                'id' => $project->id,
+                'title' => $project->title,
+                'user_id' => $project->user_id
+            ];
+
+            // Delete project using database transaction
+            DB::transaction(function () use ($project) {
+                $project->delete();
+            });
+
+            Log::info('Project deleted successfully', $deletedProject);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'message' => 'Project deleted successfully.',
+                    'deleted_project' => $deletedProject
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Project deletion error', [
+                'project_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'DELETION_ERROR',
+                    'message' => 'Unable to delete project. Please try again.'
+                ]
+            ], 500);
+        }
     }
 }
