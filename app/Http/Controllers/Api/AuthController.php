@@ -116,6 +116,7 @@ class AuthController extends Controller
             | Create the user using database transaction for data integrity
             |--------------------------------------------------------------------------
             */
+            /** @var User $user */
             $user = DB::transaction(function () use ($data) {
                 return User::create([
                     'name'     => $data['name'],

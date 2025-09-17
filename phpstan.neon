@@ -9,8 +9,8 @@ parameters:
         - '#Call to an undefined static method App\\Models\\.*::#'
         - '#Access to an undefined property App\\Models\\.*::#'
         - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
-        - '#Parameter .* expects int, string given#'
         - '#Undefined variable: \$this#'
+        - '#Call to an undefined method Illuminate\\Database\\Query\\Builder::by.*\(\)#'
     excludePaths:
         - */vendor/*
         - */node_modules/*

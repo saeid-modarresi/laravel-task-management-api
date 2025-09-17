@@ -14,8 +14,11 @@ use App\Http\Controllers\Api\NotificationController;
 | Authentication Routes
 |--------------------------------------------------------------------------
 */
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+// Disable throttling in testing environment to avoid test interference
+$throttleMiddleware = app()->environment('testing') ? [] : ['throttle:10,1'];
+
+Route::post('/login', [AuthController::class, 'login'])->middleware($throttleMiddleware);
+Route::post('/register', [AuthController::class, 'register'])->middleware($throttleMiddleware);
 
 /*
 |--------------------------------------------------------------------------

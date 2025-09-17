@@ -19,7 +19,7 @@ class Handler extends ExceptionHandler
     | Return a JSON error response in a unified format.
     |--------------------------------------------------------------------------
     */
-    protected function apiError(string $code, string $message, int $status, array $details = null, array $headers = [])
+    protected function apiError(string $code, string $message, int $status, ?array $details = null, array $headers = [])
     {
         $payload = [
             'success' => false,
