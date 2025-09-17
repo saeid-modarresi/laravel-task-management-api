@@ -1,146 +1,165 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
-use App\Models\Task;
 use App\Events\TaskUpdated;
+use App\Models\Task;
 use App\Repositories\Contracts\TaskRepositoryInterface;
+use Illuminate\Cache\TaggableStore;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
+use InvalidArgumentException;
+
+/* --------------------------------------------------------------------------
+ | TaskService
+ | - Business logic for Tasks (listing, find, create, update, delete)
+ | - Caching with tags (no raw Redis commands; PHPStan-safe)
+ | - Emits domain events on update
+ * -------------------------------------------------------------------------- */
 
 class TaskService
 {
     /** Cache TTL in minutes */
-    private const CACHE_TTL = 60;
+    private const CACHE_TTL   = 60;
+    /** Single tag for grouping task cache entries */
+    private const CACHE_TAG   = 'tasks';
+    /** Prefix inside cache keys (extra safety when tags are unsupported) */
     private const CACHE_PREFIX = 'tasks';
 
     public function __construct(
-        private TaskRepositoryInterface $taskRepository
+        private readonly TaskRepositoryInterface $taskRepository
     ) {}
 
-    /**
-     * Get paginated tasks with filters
-     */
+    /* ----------------------------------------------------------------------
+     | Public API
+     * ---------------------------------------------------------------------- */
+
+    /** Get paginated tasks with filters (status, per_page, etc.). */
     public function getPaginatedTasks(array $filters): LengthAwarePaginator
     {
-        // Limit per_page to maximum 100
-        $perPage = min($filters['per_page'] ?? 15, 100);
-        
-        // Validate status filter
-        if (isset($filters['status']) && $filters['status']) {
-            if (!in_array($filters['status'], array_keys(Task::getStatusOptions()))) {
-                unset($filters['status']); // Remove invalid status
+        // Normalize per-page: 1..100
+        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = max(1, min($perPage, 100));
+
+        // Validate status against allowed list (if defined)
+        if (!empty($filters['status'])) {
+            $status = (string) $filters['status'];
+            $validStatuses = \method_exists(Task::class, 'getStatusOptions')
+                ? \array_keys(Task::getStatusOptions())
+                : ['todo', 'in_progress', 'done'];
+
+            if (!\in_array($status, $validStatuses, true)) {
+                unset($filters['status']); // remove invalid status
             }
         }
 
-        // Generate cache key based on filters
+        // Stable cache key from filters
         $cacheKey = $this->generateCacheKey('paginated', $filters, $perPage);
 
-        // Try to get from cache first
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($filters, $perPage) {
-            Log::info('Cache miss for tasks listing', ['filters' => $filters]);
-            return $this->taskRepository->getPaginated($filters, $perPage);
-        });
+        return $this->rememberWithTag(
+            $cacheKey,
+            static function () use ($filters, $perPage) {
+                Log::info('Cache miss for tasks listing', ['filters' => $filters, 'per_page' => $perPage]);
+                return app(TaskRepositoryInterface::class)->getPaginated($filters, $perPage);
+            }
+        );
     }
 
-    /**
-     * Find task by ID
-     */
+    /** Find a single task by its numeric ID. */
     public function findTask(int $id): ?Task
     {
         $cacheKey = $this->generateCacheKey('task', ['id' => $id]);
 
-        return Cache::remember($cacheKey, self::CACHE_TTL, function () use ($id) {
-            Log::info('Cache miss for single task', ['task_id' => $id]);
-            return $this->taskRepository->findById($id);
-        });
+        return $this->rememberWithTag(
+            $cacheKey,
+            static function () use ($id) {
+                Log::info('Cache miss for single task', ['task_id' => $id]);
+                return app(TaskRepositoryInterface::class)->findById($id);
+            }
+        );
     }
 
-    /**
-     * Create a new task
-     */
+    /** Create a new task and clear relevant caches. */
     public function createTask(array $data): Task
     {
         Log::info('Creating new task', [
-            'title' => $data['title'] ?? null,
-            'status' => $data['status'] ?? 'todo'
+            'title'  => $data['title'] ?? null,
+            'status' => $data['status'] ?? 'todo',
         ]);
 
         $task = $this->taskRepository->create($data);
-        
-        // Clear cache after creating new task
+
         $this->clearTaskCache();
 
         return $task;
     }
 
     /**
-     * Update task with event firing
+     * Update task and fire event with updated fields.
+     *
+     * @throws InvalidArgumentException
+     * @throws ModelNotFoundException
      */
-    public function updateTask(string $id, array $data): Task
+    public function updateTask(int|string $id, array $data): Task
     {
-        // Validate ID format
         if (!$this->isValidTaskId($id)) {
-            throw new \InvalidArgumentException('Invalid task ID provided.');
+            throw new InvalidArgumentException('Invalid task ID provided.');
         }
 
-        // Find task
-        $task = $this->taskRepository->findById($id);
+        $intId = (int) $id;
+
+        $task = $this->taskRepository->findById($intId);
         if (!$task) {
-            throw new \Illuminate\Database\Eloquent\ModelNotFoundException('Task not found.');
+            throw new ModelNotFoundException('Task not found.');
         }
 
         return DB::transaction(function () use ($task, $data) {
-            // Filter out null values
-            $cleanData = array_filter($data, function($value) {
-                return $value !== null;
-            });
+            $cleanData = \array_filter($data, static fn($v) => $v !== null);
 
-            // Update task
             $this->taskRepository->update($task, $cleanData);
 
-            // Get updated fields for event
-            $updatedFields = array_keys($cleanData);
-
-            // Fire event for notifications
+            $updatedFields = \array_keys($cleanData);
             TaskUpdated::dispatch($task, $updatedFields);
 
             Log::info('Task updated successfully', [
-                'task_id' => $task->id,
-                'updated_fields' => $updatedFields
+                'task_id'        => $task->id,
+                'updated_fields' => $updatedFields,
             ]);
 
-            // Clear cache after updating task
             $this->clearTaskCache();
 
-            // Return fresh instance
-            return $this->taskRepository->findById($task->id);
+            return $this->taskRepository->findById((int) $task->id);
         });
     }
 
     /**
-     * Delete task
+     * Delete task and return a snapshot of the deleted record.
+     *
+     * @throws InvalidArgumentException
+     * @throws ModelNotFoundException
      */
-    public function deleteTask(string $id): array
+    public function deleteTask(int|string $id): array
     {
-        // Validate ID format
         if (!$this->isValidTaskId($id)) {
-            throw new \InvalidArgumentException('Invalid task ID provided.');
+            throw new InvalidArgumentException('Invalid task ID provided.');
         }
 
-        // Find task
-        $task = $this->taskRepository->findById($id);
+        $intId = (int) $id;
+
+        $task = $this->taskRepository->findById($intId);
         if (!$task) {
-            throw new \Illuminate\Database\Eloquent\ModelNotFoundException('Task not found.');
+            throw new ModelNotFoundException('Task not found.');
         }
 
-        // Store task data for response before deletion
         $deletedTask = [
-            'id' => $task->id,
-            'title' => $task->title,
-            'status' => $task->status
+            'id'     => (int) $task->id,
+            'title'  => (string) $task->title,
+            'status' => (string) $task->status,
         ];
 
         return DB::transaction(function () use ($task, $deletedTask) {
@@ -148,92 +167,87 @@ class TaskService
 
             Log::info('Task deleted successfully', $deletedTask);
 
-            // Clear cache after deleting task
             $this->clearTaskCache();
 
             return $deletedTask;
         });
     }
 
-    /**
-     * Get task with comments
-     */
+    /** Get a task with its comments relationship loaded. */
     public function getTaskWithComments(int $id): ?Task
     {
         return $this->taskRepository->findWithComments($id);
     }
 
-    /**
-     * Validate task ID format
-     */
-    public function isValidTaskId($id): bool
+    /** Basic numeric ID guard. */
+    public function isValidTaskId(int|string $id): bool
     {
-        return is_numeric($id) && $id > 0;
+        if (is_int($id)) {
+            return $id > 0;
+        }
+        if (!preg_match('/^\d+$/', $id)) {
+            return false;
+        }
+        return (int) $id > 0;
     }
 
-    /**
-     * Generate cache key for tasks
-     */
+    /** Build a deterministic cache key from a type + params (+ perPage). */
     private function generateCacheKey(string $type, array $params, ?int $perPage = null): string
     {
-        $keyParts = [self::CACHE_PREFIX, $type];
+        $parts = [self::CACHE_PREFIX, $type];
 
-        // Sort parameters for consistent cache keys
-        ksort($params);
-        
-        foreach ($params as $key => $value) {
-            if ($value !== null && $value !== '') {
-                $keyParts[] = $key . ':' . $value;
+        \ksort($params);
+        foreach ($params as $k => $v) {
+            if ($v !== null && $v !== '') {
+                $parts[] = $k . ':' . (is_scalar($v) ? $v : \md5((string) \json_encode($v)));
             }
         }
 
         if ($perPage !== null) {
-            $keyParts[] = 'per_page:' . $perPage;
+            $parts[] = 'per_page:' . $perPage;
         }
 
-        return implode(':', $keyParts);
+        return \implode(':', $parts);
     }
 
     /**
-     * Clear all task-related cache
+     * Cache remember wrapper that uses tags when supported,
+     * otherwise falls back to global cache.
+     *
+     * @template T
+     * @param  string         $key
+     * @param  callable():T   $resolver
+     * @return mixed          T
      */
+    private function rememberWithTag(string $key, callable $resolver): mixed
+    {
+        $store = Cache::getStore();
+
+        if ($store instanceof TaggableStore) {
+            return Cache::tags([self::CACHE_TAG])->remember($key, self::CACHE_TTL, $resolver);
+        }
+
+        return Cache::remember($key, self::CACHE_TTL, $resolver);
+    }
+
+    /** Clear all task-related cache safely (tags if available, test-friendly fallback). */
     private function clearTaskCache(): void
     {
-        // Clear all cache entries that start with our prefix
-        // This is a simple approach - in production you might want more granular control
-        $pattern = self::CACHE_PREFIX . ':*';
-        
-        try {
-            // Check if we're using Redis cache driver
-            $cacheDriver = Cache::getStore();
-            
-            if (method_exists($cacheDriver, 'getRedis')) {
-                // For Redis, we can use the KEYS command (not recommended for production)
-                // In production, consider using cache tags or a more sophisticated approach
-                $redis = Cache::getRedis();
-                $keys = $redis->keys($pattern);
-                
-                if (!empty($keys)) {
-                    $redis->del($keys);
-                    Log::info('Cleared task cache', ['pattern' => $pattern, 'keys_count' => count($keys)]);
-                }
-            } else {
-                // For other cache drivers (like array in tests), use flush method or tags
-                Log::info('Cache driver does not support Redis operations, skipping cache clear', [
-                    'driver' => get_class($cacheDriver),
-                    'pattern' => $pattern
-                ]);
-                
-                // For testing purposes, we can use a more generic approach
-                if (app()->environment('testing')) {
-                    // In tests, we can just flush all cache or skip clearing
-                    // Cache::flush(); // This would clear everything
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to clear task cache', [
-                'error' => $e->getMessage(),
-                'pattern' => $pattern
+        $store = Cache::getStore();
+
+        if ($store instanceof TaggableStore) {
+            Cache::tags([self::CACHE_TAG])->flush();
+            Log::info('Cleared task cache via tags', ['tag' => self::CACHE_TAG]);
+            return;
+        }
+
+        // Fallback for non-taggable stores (e.g., array in tests)
+        if (app()->environment('testing')) {
+            Cache::flush();
+            Log::info('Cache flushed in testing environment (no tags support)');
+        } else {
+            Log::info('Cache driver does not support tags; skipping flush', [
+                'driver' => \get_class($store),
             ]);
         }
     }
