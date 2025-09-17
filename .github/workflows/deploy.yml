@@ -4,31 +4,26 @@ on:
   workflow_run:
     workflows: ["CI Pipeline"]
     types: [completed]
-    branches: [main]
   release:
-    types: [ published ]
+    types: [published]
 
 jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main'
-    
+
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+      || (github.event_name == 'release')
+
+    environment:
+      name: production
+
     steps:
       - name: Skip deployment (CI demonstration only)
         run: |
-          echo "🚀 Deployment would happen here in a real production environment"
-          echo "✅ All CI checks passed - deployment ready"
-          echo "📦 Application package would be deployed to production servers"
-          echo "🔧 Database migrations would be run"
-          echo "♻️  Application cache would be cleared"
-          echo "✨ Deployment completed successfully"
-        
-      # Real deployment steps would go here:
-      # - name: Checkout code
-      #   uses: actions/checkout@v4
-      # - name: Setup PHP and deploy to production servers
-      # - name: Run database migrations  
-      # - name: Clear application cache
-      # - name: Health check
-      #       php artisan view:cache
+          echo "Deployment would happen here in a real production environment"
+          echo "All CI checks passed - deployment ready"
+          echo "Marking deployment as successful for 'production' environment"
