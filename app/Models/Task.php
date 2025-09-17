@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
 {
@@ -105,5 +106,13 @@ class Task extends Model
     {
         return $query->where('due_date', '<', now()->toDateString())
                     ->where('status', '!=', 'done');
+    }
+
+    /**
+     * Get the comments for the task.
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(Comment::class);
     }
 }

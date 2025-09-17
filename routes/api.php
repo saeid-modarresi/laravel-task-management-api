@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\Api\CommentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,3 +37,11 @@ Route::apiResource('projects', ProjectController::class);
 |--------------------------------------------------------------------------
 */
 Route::apiResource('tasks', TaskController::class);
+
+/*
+|--------------------------------------------------------------------------
+| Comment Management Routes (Nested under Tasks)
+|--------------------------------------------------------------------------
+*/
+Route::apiResource('tasks.comments', CommentController::class)
+    ->parameters(['tasks' => 'task', 'comments' => 'comment']);
