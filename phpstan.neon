@@ -1,3 +1,6 @@
+includes:
+  - vendor/larastan/larastan/extension.neon
+
 parameters:
   reportUnmatchedIgnoredErrors: false
 
@@ -6,13 +9,11 @@ parameters:
     - config
     - database
     - routes
+
   level: 3
 
   ignoreErrors:
-    - '#Call to an undefined static method App\\Models\\.*::#'
-    - '#Access to an undefined property App\\Models\\.*::#'
-    - '#Call to an undefined static method Illuminate\\Support\\Facades\\Cache::getRedis#'
-    - '#Undefined variable: \\$this#'
+    - message: '#Undefined variable:\s+\$this#'
 
   excludePaths:
     - */vendor/*

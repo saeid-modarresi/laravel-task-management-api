@@ -108,7 +108,8 @@ class CommentController extends Controller
             // Validate task exists
             $task = Task::findOrFail($taskId);
 
-            $comment = $task->comments()->findOrFail($commentId);
+            /** @var \App\Models\Comment $comment */
+            $comment = $task->comments()->getQuery()->findOrFail((int) $commentId);
 
             return response()->json([
                 'success' => true,
@@ -141,7 +142,8 @@ class CommentController extends Controller
             // Validate task exists
             $task = Task::findOrFail($taskId);
 
-            $comment = $task->comments()->findOrFail($commentId);
+            /** @var \App\Models\Comment $comment */
+            $comment = $task->comments()->getQuery()->findOrFail((int) $commentId);
 
             $validated = $request->validate([
                 'content' => 'required|string',
@@ -188,7 +190,8 @@ class CommentController extends Controller
             // Validate task exists
             $task = Task::findOrFail($taskId);
 
-            $comment = $task->comments()->findOrFail($commentId);
+            /** @var \App\Models\Comment $comment */
+            $comment = $task->comments()->getQuery()->findOrFail((int) $commentId);
 
             DB::transaction(function () use ($comment) {
                 $comment->delete();

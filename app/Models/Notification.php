@@ -2,10 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property string|null $type
+ * @property \Illuminate\Support\Carbon|null $read_at
+ */
 class Notification extends Model
 {
     use HasFactory;
@@ -33,7 +40,7 @@ class Notification extends Model
     /**
      * Scope a query to only include unread notifications.
      */
-    public function scopeUnread($query)
+    public function scopeUnread(Builder $query): Builder
     {
         return $query->whereNull('read_at');
     }
@@ -49,11 +56,9 @@ class Notification extends Model
     /**
      * Mark the notification as read.
      */
-    public function markAsRead()
+    public function markAsRead(): void
     {
-        if (is_null($this->read_at)) {
-            $this->forceFill(['read_at' => now()])->save();
-        }
+        $this->forceFill(['read_at' => now()])->save();
     }
 
     /**

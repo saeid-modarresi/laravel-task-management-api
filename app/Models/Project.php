@@ -2,10 +2,19 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
+/**
+ * @property int    $id
+ * @property string $title
+ * @property int    $user_id
+ * @method static Builder byUser(int $userId)
+ * @method static Builder byStatus(string $status)
+ * @mixin Builder
+ */
 class Project extends Model
 {
     use HasFactory;
@@ -48,18 +57,18 @@ class Project extends Model
     }
 
     /**
-     * Scope for filtering by status
+     * Scope for filtering by user
      */
-    public function scopeByStatus($query, $status)
+    public function scopeByUser(Builder $q, int $userId): Builder
     {
-        return $query->where('status', $status);
+        return $q->where('user_id', $userId);
     }
 
     /**
-     * Scope for filtering by user
+     * Scope for filtering by status
      */
-    public function scopeByUser($query, $userId)
+    public function scopeByStatus(Builder $q, string $status): Builder
     {
-        return $query->where('user_id', $userId);
+        return $q->where('status', $status);
     }
 }

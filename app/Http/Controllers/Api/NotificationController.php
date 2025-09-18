@@ -19,13 +19,15 @@ class NotificationController extends Controller
     {
         try {
             // Validate user exists
-            $user = User::findOrFail($userId);
+            $user = User::findOrFail((int) $userId);
 
             $perPage = min($request->get('per_page', 15), 100);
             $page = $request->get('page', 1);
             $unreadOnly = $request->boolean('unread_only', false);
 
-            $query = $user->notifications()->orderBy('created_at', 'desc');
+            $query = Notification::query()
+                ->whereBelongsTo($user)
+                ->orderBy('created_at', 'desc');
 
             if ($unreadOnly) {
                 $query->unread();
@@ -37,10 +39,9 @@ class NotificationController extends Controller
                 'success' => true,
                 'data' => $notifications
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to fetch notifications: ' . $e->getMessage());
-            
+
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json([
                     'success' => false,
@@ -61,9 +62,9 @@ class NotificationController extends Controller
     public function unreadCount($userId): JsonResponse
     {
         try {
-            $user = User::findOrFail($userId);
-            
-            $count = $user->notifications()->unread()->count();
+
+            $user = User::findOrFail((int) $userId);
+            $count = Notification::query()->whereBelongsTo($user)->unread()->count();
 
             return response()->json([
                 'success' => true,
@@ -71,10 +72,9 @@ class NotificationController extends Controller
                     'unread_count' => $count
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to fetch unread count: ' . $e->getMessage());
-            
+
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json([
                     'success' => false,
@@ -95,24 +95,26 @@ class NotificationController extends Controller
     public function markAsRead($userId, $notificationId): JsonResponse
     {
         try {
-            $user = User::findOrFail($userId);
-            $notification = $user->notifications()->findOrFail($notificationId);
 
-            DB::transaction(function () use ($notification) {
-                $notification->markAsRead();
-            });
+            $user = User::findOrFail((int) $userId);
+
+            /** @var \App\Models\Notification $notification */
+            $notification = Notification::query()
+                ->whereBelongsTo($user)
+                ->findOrFail((int) $notificationId);
+
+            DB::transaction(fn() => $notification->markAsRead());
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'message' => 'Notification marked as read.',
-                    'notification' => $notification->fresh()
-                ]
+                    'notification' => $notification->fresh(),
+                ],
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to mark notification as read: ' . $e->getMessage());
-            
+
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json([
                     'success' => false,
@@ -133,13 +135,13 @@ class NotificationController extends Controller
     public function markAllAsRead($userId): JsonResponse
     {
         try {
-            $user = User::findOrFail($userId);
 
-            $updatedCount = DB::transaction(function () use ($user) {
-                return $user->notifications()->unread()->update([
-                    'read_at' => now()
-                ]);
-            });
+            $user = User::findOrFail((int) $userId);
+
+            $updatedCount = DB::transaction(
+                fn() =>
+                Notification::query()->whereBelongsTo($user)->unread()->update(['read_at' => now()])
+            );
 
             return response()->json([
                 'success' => true,
@@ -148,10 +150,9 @@ class NotificationController extends Controller
                     'updated_count' => $updatedCount
                 ]
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to mark all notifications as read: ' . $e->getMessage());
-            
+
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json([
                     'success' => false,
@@ -172,28 +173,31 @@ class NotificationController extends Controller
     public function destroy($userId, $notificationId): JsonResponse
     {
         try {
-            $user = User::findOrFail($userId);
-            $notification = $user->notifications()->findOrFail($notificationId);
 
-            DB::transaction(function () use ($notification) {
-                $notification->delete();
-            });
+            $user = User::findOrFail((int) $userId);
+            
+            /** @var \App\Models\Notification $notification */
+            $notification = Notification::query()
+                ->whereBelongsTo($user)
+                ->findOrFail((int) $notificationId);
+
+            DB::transaction(fn() => $notification->delete());
 
             return response()->json([
                 'success' => true,
                 'data' => [
                     'message' => 'Notification deleted successfully.',
                     'deleted_notification' => [
-                        'id' => $notification->id,
-                        'type' => $notification->type,
-                        'user_id' => $notification->user_id
-                    ]
-                ]
+                        'id'      => $notification->id,
+                        'type'    => $notification->type,
+                        'user_id' => $notification->user_id,
+                    ],
+                ],
             ]);
 
         } catch (\Exception $e) {
             Log::error('Failed to delete notification: ' . $e->getMessage());
-            
+
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json([
                     'success' => false,
