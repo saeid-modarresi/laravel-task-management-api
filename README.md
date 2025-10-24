@@ -123,3 +123,14 @@ tests/Feature/NotificationsTest.php
 - **DB issues** → check `.env`, run `php artisan migrate`
 - **Config not applied** → `php artisan config:clear`
 - **Redis port busy** → remove host mapping or change port
+
+---
+
+# Testing & Quality Checks
+This project include:
+- Unit tests for core services and repositories.
+- Integration tests for API endpoints.
+- Static analysis (PHPStan/Larastan) to catch potential issues.
+to achieved 71.6% test coverage.
+
+![1_-ezjy2FiN-II2pVNYaR32A](https://github.com/user-attachments/assets/aad99bc4-e9b2-4bdf-a4c2-1b79e4c7080d)
